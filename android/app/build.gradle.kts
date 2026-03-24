@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,10 +8,33 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use(::load)
+    }
+}
+
+val flutterNdkDirectory = localProperties
+    .getProperty("sdk.dir")
+    ?.let { File(it, "ndk/${flutter.ndkVersion}") }
+
+val hasValidFlutterNdk = flutterNdkDirectory
+    ?.resolve("source.properties")
+    ?.isFile == true
+
+if (!hasValidFlutterNdk) {
+    logger.warn(
+        "Skipping ndkVersion ${flutter.ndkVersion} because ${flutterNdkDirectory?.path ?: "the SDK NDK directory"} is missing source.properties."
+    )
+}
+
 android {
     namespace = "com.rethinkos.trackos"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    if (hasValidFlutterNdk) {
+        ndkVersion = flutter.ndkVersion
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
