@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'storage_service.dart';
@@ -11,21 +13,38 @@ const String kEventLocation = 'location';
 const String kEventStatus = 'status';
 const String kActionStop = 'stopService';
 const String kPrefIntervalKey = 'tracking_interval_seconds';
+const String kNotificationChannelId = 'trackos_location';
+const int kForegroundNotificationId = 888;
+
+const AndroidNotificationChannel _androidNotificationChannel =
+    AndroidNotificationChannel(
+      kNotificationChannelId,
+      'TrackOS Location Tracking',
+      description: '前台定位追踪服务通知',
+      importance: Importance.low,
+    );
 
 /// Initialize and configure flutter_background_service.
 /// Must be called from main() before runApp().
 Future<void> initBackgroundService() async {
   final service = FlutterBackgroundService();
+  final notifications = FlutterLocalNotificationsPlugin();
+
+  await notifications
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
+      ?.createNotificationChannel(_androidNotificationChannel);
 
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onBackgroundServiceStart,
       isForegroundMode: true,
       autoStart: false,
-      notificationChannelId: 'trackos_location',
+      notificationChannelId: kNotificationChannelId,
       initialNotificationTitle: 'TrackOS',
       initialNotificationContent: '位置追踪已启动',
-      foregroundServiceNotificationId: 888,
+      foregroundServiceNotificationId: kForegroundNotificationId,
       foregroundServiceTypes: [AndroidForegroundType.location],
     ),
     iosConfiguration: IosConfiguration(
@@ -46,8 +65,16 @@ Future<bool> _onIosBackground(ServiceInstance service) async {
 @pragma('vm:entry-point')
 void onBackgroundServiceStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
+  DartPluginRegistrant.ensureInitialized();
 
   final storage = StorageService();
+
+  if (service is AndroidServiceInstance) {
+    await service.setForegroundNotificationInfo(
+      title: 'TrackOS',
+      content: '位置追踪运行中',
+    );
+  }
 
   // Listen for stop command from UI
   service.on(kActionStop).listen((_) async {
