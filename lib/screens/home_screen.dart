@@ -321,11 +321,11 @@ class _LocationCard extends StatelessWidget {
             if (data == null)
               const Text('暂无数据', style: TextStyle(color: Colors.grey))
             else ...[
-              _InfoRow('纬度', '${(data!['lat'] as double).toStringAsFixed(6)}°'),
-              _InfoRow('经度', '${(data!['lng'] as double).toStringAsFixed(6)}°'),
-              _InfoRow('精度', '${(data!['accuracy'] as double).toStringAsFixed(1)} m'),
-              _InfoRow('海拔', '${(data!['altitude'] as double).toStringAsFixed(1)} m'),
-              _InfoRow('速度', '${(data!['speed'] as double).toStringAsFixed(2)} m/s'),
+              _InfoRow('纬度', '${(data!['lat'] as num).toDouble().toStringAsFixed(6)}°'),
+              _InfoRow('经度', '${(data!['lng'] as num).toDouble().toStringAsFixed(6)}°'),
+              _InfoRow('精度', '${(data!['accuracy'] as num).toDouble().toStringAsFixed(1)} m'),
+              _InfoRow('海拔', '${(data!['altitude'] as num).toDouble().toStringAsFixed(1)} m'),
+              _InfoRow('速度', '${(data!['speed'] as num).toDouble().toStringAsFixed(2)} m/s'),
               _InfoRow(
                 '时间',
                 DateTime.fromMillisecondsSinceEpoch(data!['timestamp'] as int)
