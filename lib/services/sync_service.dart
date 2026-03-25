@@ -9,16 +9,20 @@ const String kSyncDeviceId = 'android-device';
 
 /// Sync service: uploads unsynced location records to the configured server.
 ///
-/// POST {serverUrl}/api/locations/report
+/// POST {serverUrl}/api/locations/report/batch
 /// Body: {
 ///   "userId": "1",
 ///   "deviceId": "android-device",
-///   "latitude": 31.2304,
-///   "longitude": 121.4737,
-///   "recordedAt": "2026-03-25T02:50:00.000Z",
-///   "accuracy": 5,
-///   "speed": 1.2,
-///   "altitude": 12.5
+///   "records": [
+///     {
+///       "latitude": 31.2304,
+///       "longitude": 121.4737,
+///       "recordedAt": "2026-03-25T02:50:00.000Z",
+///       "accuracy": 5,
+///       "speed": 1.2,
+///       "altitude": 12.5
+///     }
+///   ]
 /// }
 ///
 /// Currently defaults to http://track-api.rethinkos.com if not configured.
@@ -46,25 +50,25 @@ class SyncService {
     final records = await _storage.queryUnsynced(limit: 100);
     if (records.isEmpty) return 0;
 
-    final syncedIds = <int>[];
-
     try {
-      for (final record in records) {
-        final response = await _dio.post(
-          '$serverUrl/api/locations/report',
-          data: _buildPayload(record),
-        );
+      final response = await _dio.post(
+        '$serverUrl/api/locations/report/batch',
+        data: _buildBatchPayload(records),
+      );
 
-        if (response.statusCode != null &&
-            response.statusCode! >= 200 &&
-            response.statusCode! < 300 &&
-            record.id != null) {
-          syncedIds.add(record.id!);
-        }
+      if (response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300) {
+        final acceptedCount = _extractAcceptedCount(response.data, records.length);
+        final syncedIds = records
+            .take(acceptedCount)
+            .map((record) => record.id)
+            .whereType<int>()
+            .toList();
+
+        await _storage.markSynced(syncedIds);
+        return syncedIds.length;
       }
-
-      await _storage.markSynced(syncedIds);
-      return syncedIds.length;
     } on DioException {
       // Network/server errors are non-fatal; records remain unsynced and retry later
     }
@@ -72,10 +76,16 @@ class SyncService {
     return 0;
   }
 
-  Map<String, dynamic> _buildPayload(LocationRecord record) {
+  Map<String, dynamic> _buildBatchPayload(List<LocationRecord> records) {
     return {
       'userId': kSyncUserId,
       'deviceId': kSyncDeviceId,
+      'records': records.map(_buildRecordPayload).toList(),
+    };
+  }
+
+  Map<String, dynamic> _buildRecordPayload(LocationRecord record) {
+    return {
       'latitude': record.lat,
       'longitude': record.lng,
       'recordedAt': DateTime.fromMillisecondsSinceEpoch(record.timestamp, isUtc: true).toIso8601String(),
@@ -83,5 +93,22 @@ class SyncService {
       'speed': record.speed,
       'altitude': record.altitude,
     };
+  }
+
+  int _extractAcceptedCount(dynamic responseData, int fallback) {
+    if (responseData is Map<String, dynamic>) {
+      final data = responseData['data'];
+      if (data is Map<String, dynamic>) {
+        final acceptedCount = data['acceptedCount'];
+        if (acceptedCount is int) {
+          return acceptedCount;
+        }
+        if (acceptedCount is num) {
+          return acceptedCount.toInt();
+        }
+      }
+    }
+
+    return fallback;
   }
 }

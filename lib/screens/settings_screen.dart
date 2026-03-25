@@ -127,8 +127,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '会向 {url}/api/locations/report 逐条发送 POST 请求，\n'
-                      'Body: { "userId": "1", "deviceId": "android-device", ... }',
+                      '会向 {url}/api/locations/report/batch 发送批量 POST 请求，\n'
+                      'Body: { "userId": "1", "deviceId": "android-device", "records": [...] }',
                       style: TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ],
