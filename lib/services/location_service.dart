@@ -24,20 +24,23 @@ class LocationService {
   }
 
   /// Check and request necessary location permissions.
-  /// Returns true only when [LocationPermission.always] or
+  /// Returns true when [LocationPermission.always] or
   /// [LocationPermission.whileInUse] is granted.
+  /// NOTE: does NOT check whether the system location service (GPS) is on;
+  /// use [isLocationServiceEnabled] for that separately.
   Future<bool> requestPermissions() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return false;
-
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) return false;
     }
     if (permission == LocationPermission.deniedForever) return false;
-
     return true;
+  }
+
+  /// Check whether the system location service (GPS toggle) is enabled.
+  Future<bool> isLocationServiceEnabled() async {
+    return Geolocator.isLocationServiceEnabled();
   }
 
   /// Check whether background location permission is granted (Android 10+).

@@ -13,10 +13,11 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _serviceRunning = false;
   bool _hasPermission = false;
   bool _hasBackgroundPermission = false;
+  bool _locationServiceEnabled = true;
   Map<String, dynamic>? _latestLocation;
   int _totalRecords = 0;
   bool _syncing = false;
@@ -27,7 +28,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-check permissions when the user returns from system Settings
+    if (state == AppLifecycleState.resumed) {
+      _checkPermissions();
+    }
   }
 
   Future<void> _init() async {
@@ -45,9 +55,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final locationService = LocationService();
     final hasPerm = await locationService.requestPermissions();
     final hasBg = await locationService.hasBackgroundPermission();
+    final serviceOn = await locationService.isLocationServiceEnabled();
     setState(() {
       _hasPermission = hasPerm;
       _hasBackgroundPermission = hasBg;
+      _locationServiceEnabled = serviceOn;
     });
   }
 
@@ -75,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _locationSub?.cancel();
     _statusSub?.cancel();
     super.dispose();
@@ -160,6 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _PermissionCard(
               hasPermission: _hasPermission,
               hasBackground: _hasBackgroundPermission,
+              locationServiceEnabled: _locationServiceEnabled,
               onRefresh: _checkPermissions,
             ),
             const SizedBox(height: 16),
@@ -226,10 +240,12 @@ class _PermissionCard extends StatelessWidget {
   const _PermissionCard({
     required this.hasPermission,
     required this.hasBackground,
+    required this.locationServiceEnabled,
     required this.onRefresh,
   });
   final bool hasPermission;
   final bool hasBackground;
+  final bool locationServiceEnabled;
   final VoidCallback onRefresh;
 
   @override
@@ -252,6 +268,10 @@ class _PermissionCard extends StatelessWidget {
                   label: const Text('刷新'),
                 ),
               ],
+            ),
+            _PermissionRow(
+              label: '系统位置服务（GPS 开关）',
+              granted: locationServiceEnabled,
             ),
             _PermissionRow(
               label: '位置权限（前台）',
