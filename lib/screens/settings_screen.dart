@@ -118,7 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     TextField(
                       controller: _serverUrlController,
                       decoration: const InputDecoration(
-                        hintText: 'http://192.168.1.100:3000',
+                        hintText: 'http://track-api.rethinkos.com',
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.cloud),
                       ),
@@ -127,8 +127,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '会向 {url}/api/locations 发送 POST 请求，\n'
-                      'Body: { "deviceId": "...", "records": [...] }',
+                      '会向 {url}/api/locations/report 逐条发送 POST 请求，\n'
+                      'Body: { "userId": "1", "deviceId": "android-device", ... }',
                       style: TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ],
