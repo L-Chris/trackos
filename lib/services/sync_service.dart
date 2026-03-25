@@ -21,8 +21,8 @@ const String kSyncDeviceId = 'android-device';
 ///   "altitude": 12.5
 /// }
 ///
-/// Currently inactive (URL defaults to empty). Fill in the server URL via
-/// SettingsScreen to enable syncing.
+/// Currently defaults to http://track-api.rethinkos.com if not configured.
+/// Override via SettingsScreen to use a different server.
 class SyncService {
   static final SyncService _instance = SyncService._internal();
   factory SyncService() => _instance;
@@ -40,7 +40,7 @@ class SyncService {
   /// or -1 if skipped (no URL configured).
   Future<int> syncPending() async {
     final prefs = await SharedPreferences.getInstance();
-    final serverUrl = (prefs.getString(kPrefServerUrl) ?? '').trim().replaceAll(RegExp(r'/+$'), '');
+    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'http://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
     if (serverUrl.isEmpty) return -1;
 
     final records = await _storage.queryUnsynced(limit: 100);

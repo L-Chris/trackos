@@ -28,7 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30;
-      _serverUrlController.text = prefs.getString(kPrefServerUrl) ?? '';
+      _serverUrlController.text = prefs.getString(kPrefServerUrl) ?? 'http://track-api.rethinkos.com';
     });
   }
 
