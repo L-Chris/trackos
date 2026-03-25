@@ -13,8 +13,11 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _intervalOptions = [5, 10, 30, 60, 300];
   static const _intervalLabels = ['5 秒', '10 秒', '30 秒', '1 分钟', '5 分钟'];
+  static const _usageIntervalOptions = [60, 300, 900, 1800];
+  static const _usageIntervalLabels = ['1 分钟', '5 分钟', '15 分钟', '30 分钟'];
 
   int _intervalSeconds = 30;
+  int _usageIntervalSeconds = 300;
   final _serverUrlController = TextEditingController();
   bool _saving = false;
 
@@ -28,6 +31,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30;
+      _usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 300;
       _serverUrlController.text = prefs.getString(kPrefServerUrl) ?? 'http://track-api.rethinkos.com';
     });
   }
@@ -36,6 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _saving = true);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(kPrefIntervalKey, _intervalSeconds);
+    await prefs.setInt(kPrefUsageIntervalKey, _usageIntervalSeconds);
     await prefs.setString(kPrefServerUrl, _serverUrlController.text.trim());
     setState(() => _saving = false);
     if (mounted) {
@@ -98,6 +103,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '应用使用采集间隔',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '当前：${_usageIntervalLabels[_usageIntervalOptions.indexOf(_usageIntervalSeconds)]}',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: List.generate(_usageIntervalOptions.length, (i) {
+                        final selected = _usageIntervalOptions[i] == _usageIntervalSeconds;
+                        return ChoiceChip(
+                          label: Text(_usageIntervalLabels[i]),
+                          selected: selected,
+                          onSelected: (_) {
+                            setState(() => _usageIntervalSeconds = _usageIntervalOptions[i]);
+                          },
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             // --- Server URL ---
             Card(
               child: Padding(
@@ -128,7 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 8),
                     const Text(
                       '会向 {url}/api/locations/report/batch 发送批量 POST 请求，\n'
-                      'Body: { "userId": "1", "deviceId": "android-device", "records": [...] }',
+                      '应用使用汇总会额外发送到 {url}/api/app-usage-summaries/report/batch。',
                       style: TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ],

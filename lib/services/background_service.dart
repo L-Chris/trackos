@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'usage_service.dart';
 import 'storage_service.dart';
 import '../models/location_record.dart';
 
@@ -11,6 +13,8 @@ const String kEventLocation = 'location';
 const String kEventStatus = 'status';
 const String kActionStop = 'stopService';
 const String kPrefIntervalKey = 'tracking_interval_seconds';
+const String kPrefUsageIntervalKey = 'usage_tracking_interval_seconds';
+const String kPrefLastUsageCollectionKey = 'last_usage_collection_timestamp_ms';
 const String kNotificationChannelId = 'trackos_location';
 const int kForegroundNotificationId = 888;
 
@@ -50,6 +54,7 @@ void onBackgroundServiceStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final storage = StorageService();
+  final usageService = UsageService();
 
   if (service is AndroidServiceInstance) {
     await service.setForegroundNotificationInfo(
@@ -67,6 +72,7 @@ void onBackgroundServiceStart(ServiceInstance service) async {
   // Read interval from shared prefs (default 30s)
   final prefs = await SharedPreferences.getInstance();
   int intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30;
+  int usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 300;
 
   // Android: force built-in LocationManager (no Google Play Services needed)
   final locationSettings = AndroidSettings(
@@ -76,6 +82,8 @@ void onBackgroundServiceStart(ServiceInstance service) async {
 
   // Broadcast initial status
   service.invoke(kEventStatus, {'running': true});
+
+  var isCollectingUsage = false;
 
   // Periodic tracking timer
   Timer.periodic(Duration(seconds: intervalSeconds), (_) async {
@@ -106,6 +114,38 @@ void onBackgroundServiceStart(ServiceInstance service) async {
       });
     } catch (_) {
       // Silently ignore individual collection errors
+    }
+  });
+
+  Timer.periodic(Duration(seconds: usageIntervalSeconds), (_) async {
+    if (!Platform.isAndroid || isCollectingUsage) {
+      return;
+    }
+
+    isCollectingUsage = true;
+    try {
+      final hasPermission = await usageService.hasUsageStatsPermission();
+      if (!hasPermission) {
+        return;
+      }
+
+      final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+      final lastCollectedAt = prefs.getInt(kPrefLastUsageCollectionKey) ?? (now - usageIntervalSeconds * 1000);
+      if (lastCollectedAt >= now) {
+        return;
+      }
+
+      final summaries = await usageService.queryUsageSummaries(
+        startMs: lastCollectedAt,
+        endMs: now,
+      );
+
+      await storage.insertUsageSummaries(summaries);
+      await prefs.setInt(kPrefLastUsageCollectionKey, now);
+    } catch (_) {
+      // Ignore usage collection errors and retry in the next cycle.
+    } finally {
+      isCollectingUsage = false;
     }
   });
 }

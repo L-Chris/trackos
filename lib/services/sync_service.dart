@@ -1,11 +1,22 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/app_usage_summary_record.dart';
 import '../models/location_record.dart';
 import 'storage_service.dart';
 
 const String kPrefServerUrl = 'server_url';
 const String kSyncUserId = '1';
 const String kSyncDeviceId = 'android-device';
+
+class SyncCounts {
+  final int locations;
+  final int usageSummaries;
+
+  const SyncCounts({
+    required this.locations,
+    required this.usageSummaries,
+  });
+}
 
 /// Sync service: uploads unsynced location records to the configured server.
 ///
@@ -76,6 +87,49 @@ class SyncService {
     return 0;
   }
 
+  Future<int> syncPendingUsageSummaries() async {
+    final prefs = await SharedPreferences.getInstance();
+    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'http://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    if (serverUrl.isEmpty) return -1;
+
+    final records = await _storage.queryUnsyncedUsageSummaries(limit: 100);
+    if (records.isEmpty) return 0;
+
+    try {
+      final response = await _dio.post(
+        '$serverUrl/api/app-usage-summaries/report/batch',
+        data: _buildUsageSummaryBatchPayload(records),
+      );
+
+      if (response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300) {
+        final acceptedCount = _extractAcceptedCount(response.data, records.length);
+        final syncedIds = records
+            .take(acceptedCount)
+            .map((record) => record.id)
+            .whereType<int>()
+            .toList();
+
+        await _storage.markUsageSummariesSynced(syncedIds);
+        return syncedIds.length;
+      }
+    } on DioException {
+      // Usage summary sync shares the same retry model as location sync.
+    }
+
+    return 0;
+  }
+
+  Future<SyncCounts> syncAllPending() async {
+    final locations = await syncPending();
+    final usageSummaries = await syncPendingUsageSummaries();
+    return SyncCounts(
+      locations: locations,
+      usageSummaries: usageSummaries,
+    );
+  }
+
   Map<String, dynamic> _buildBatchPayload(List<LocationRecord> records) {
     return {
       'userId': kSyncUserId,
@@ -92,6 +146,28 @@ class SyncService {
       'accuracy': record.accuracy,
       'speed': record.speed,
       'altitude': record.altitude,
+    };
+  }
+
+  Map<String, dynamic> _buildUsageSummaryBatchPayload(List<AppUsageSummaryRecord> records) {
+    return {
+      'userId': kSyncUserId,
+      'deviceId': kSyncDeviceId,
+      'records': records.map(_buildUsageSummaryPayload).toList(),
+    };
+  }
+
+  Map<String, dynamic> _buildUsageSummaryPayload(AppUsageSummaryRecord record) {
+    return {
+      'recordKey': '${kSyncDeviceId}:${record.recordKey}',
+      'packageName': record.packageName,
+      'appName': record.appName,
+      'windowStartAt': DateTime.fromMillisecondsSinceEpoch(record.windowStartMs, isUtc: true).toIso8601String(),
+      'windowEndAt': DateTime.fromMillisecondsSinceEpoch(record.windowEndMs, isUtc: true).toIso8601String(),
+      'foregroundTimeMs': record.foregroundTimeMs,
+      'lastUsedAt': record.lastUsedMs == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(record.lastUsedMs!, isUtc: true).toIso8601String(),
     };
   }
 
