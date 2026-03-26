@@ -32,7 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30;
       _usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 300;
-      _serverUrlController.text = prefs.getString(kPrefServerUrl) ?? 'http://track-api.rethinkos.com';
+      _serverUrlController.text = prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com';
     });
   }
 
@@ -157,7 +157,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     TextField(
                       controller: _serverUrlController,
                       decoration: const InputDecoration(
-                        hintText: 'http://track-api.rethinkos.com',
+                        hintText: 'https://track-api.rethinkos.com',
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.cloud),
                       ),

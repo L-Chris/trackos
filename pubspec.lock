@@ -685,6 +685,13 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.11.0"
+  trackos_usage_stats:
+    dependency: "direct main"
+    description:
+      path: "packages/trackos_usage_stats"
+      relative: true
+    source: path
+    version: "0.0.1"
   typed_data:
     dependency: transitive
     description:

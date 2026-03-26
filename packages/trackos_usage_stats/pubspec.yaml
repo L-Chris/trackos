@@ -1,0 +1,22 @@
+name: trackos_usage_stats
+description: Local plugin that exposes Android UsageStatsManager via MethodChannel.
+  Registered as a proper Flutter plugin so that GeneratedPluginRegistrant includes
+  it automatically — including in the flutter_background_service engine.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.0.0
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.rethinkos.trackos
+        pluginClass: UsageStatsPlugin
+

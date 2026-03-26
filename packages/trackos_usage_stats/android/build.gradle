@@ -1,0 +1,32 @@
+group 'com.rethinkos.trackos'
+version '1.0'
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    // namespace must differ from the main app's namespace ("com.rethinkos.trackos")
+    // to avoid resource-merge conflicts in AGP 8+.
+    // The Kotlin class package (com.rethinkos.trackos) is independent of namespace.
+    namespace 'com.rethinkos.trackos.usagestats'
+
+    compileSdk 35
+
+    defaultConfig {
+        minSdk 21
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    compileOnly 'androidx.annotation:annotation:1.7.0'
+}
+

@@ -11,11 +11,16 @@ const String kSyncDeviceId = 'android-device';
 class SyncCounts {
   final int locations;
   final int usageSummaries;
+  /// Non-null when a network / server error occurred during sync.
+  final String? error;
 
   const SyncCounts({
     required this.locations,
     required this.usageSummaries,
+    this.error,
   });
+
+  bool get hasError => error != null;
 }
 
 /// Sync service: uploads unsynced location records to the configured server.
@@ -55,79 +60,105 @@ class SyncService {
   /// or -1 if skipped (no URL configured).
   Future<int> syncPending() async {
     final prefs = await SharedPreferences.getInstance();
-    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'http://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
     if (serverUrl.isEmpty) return -1;
 
     final records = await _storage.queryUnsynced(limit: 100);
     if (records.isEmpty) return 0;
 
-    try {
-      final response = await _dio.post(
-        '$serverUrl/api/locations/report/batch',
-        data: _buildBatchPayload(records),
-      );
+    final response = await _dio.post(
+      '$serverUrl/api/locations/report/batch',
+      data: _buildBatchPayload(records),
+    );
 
-      if (response.statusCode != null &&
-          response.statusCode! >= 200 &&
-          response.statusCode! < 300) {
-        final acceptedCount = _extractAcceptedCount(response.data, records.length);
-        final syncedIds = records
-            .take(acceptedCount)
-            .map((record) => record.id)
-            .whereType<int>()
-            .toList();
+    if (response.statusCode != null &&
+        response.statusCode! >= 200 &&
+        response.statusCode! < 300) {
+      final acceptedCount = _extractAcceptedCount(response.data, records.length);
+      final syncedIds = records
+          .take(acceptedCount)
+          .map((record) => record.id)
+          .whereType<int>()
+          .toList();
 
-        await _storage.markSynced(syncedIds);
-        return syncedIds.length;
-      }
-    } on DioException {
-      // Network/server errors are non-fatal; records remain unsynced and retry later
+      await _storage.markSynced(syncedIds);
+      return syncedIds.length;
     }
-
+    // Non-2xx without an exception — treat as 0 synced.
     return 0;
   }
 
   Future<int> syncPendingUsageSummaries() async {
     final prefs = await SharedPreferences.getInstance();
-    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'http://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
     if (serverUrl.isEmpty) return -1;
 
     final records = await _storage.queryUnsyncedUsageSummaries(limit: 100);
     if (records.isEmpty) return 0;
 
-    try {
-      final response = await _dio.post(
-        '$serverUrl/api/app-usage-summaries/report/batch',
-        data: _buildUsageSummaryBatchPayload(records),
-      );
+    final response = await _dio.post(
+      '$serverUrl/api/app-usage-summaries/report/batch',
+      data: _buildUsageSummaryBatchPayload(records),
+    );
 
-      if (response.statusCode != null &&
-          response.statusCode! >= 200 &&
-          response.statusCode! < 300) {
-        final acceptedCount = _extractAcceptedCount(response.data, records.length);
-        final syncedIds = records
-            .take(acceptedCount)
-            .map((record) => record.id)
-            .whereType<int>()
-            .toList();
+    if (response.statusCode != null &&
+        response.statusCode! >= 200 &&
+        response.statusCode! < 300) {
+      final acceptedCount = _extractAcceptedCount(response.data, records.length);
+      final syncedIds = records
+          .take(acceptedCount)
+          .map((record) => record.id)
+          .whereType<int>()
+          .toList();
 
-        await _storage.markUsageSummariesSynced(syncedIds);
-        return syncedIds.length;
-      }
-    } on DioException {
-      // Usage summary sync shares the same retry model as location sync.
+      await _storage.markUsageSummariesSynced(syncedIds);
+      return syncedIds.length;
     }
-
     return 0;
   }
 
   Future<SyncCounts> syncAllPending() async {
-    final locations = await syncPending();
-    final usageSummaries = await syncPendingUsageSummaries();
+    int locations = 0;
+    int usageSummaries = 0;
+    String? error;
+
+    try {
+      locations = await syncPending();
+    } on DioException catch (e) {
+      error = _formatDioError(e);
+    } catch (e) {
+      error = e.toString();
+    }
+
+    try {
+      usageSummaries = await syncPendingUsageSummaries();
+    } on DioException catch (e) {
+      error ??= _formatDioError(e);
+    } catch (e) {
+      error ??= e.toString();
+    }
+
     return SyncCounts(
       locations: locations,
       usageSummaries: usageSummaries,
+      error: error,
     );
+  }
+
+  String _formatDioError(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return '连接超时，请检查网络';
+      case DioExceptionType.connectionError:
+        return '无法连接服务器（${e.message ?? "连接错误"}）';
+      case DioExceptionType.badResponse:
+        final code = e.response?.statusCode;
+        return '服务器返回错误 HTTP $code';
+      default:
+        return e.message ?? '未知网络错误';
+    }
   }
 
   Map<String, dynamic> _buildBatchPayload(List<LocationRecord> records) {

@@ -11,6 +11,7 @@ import '../models/location_record.dart';
 // Keys used for IPC events between service isolate and UI
 const String kEventLocation = 'location';
 const String kEventStatus = 'status';
+const String kEventUsage = 'usage';
 const String kActionStop = 'stopService';
 const String kPrefIntervalKey = 'tracking_interval_seconds';
 const String kPrefUsageIntervalKey = 'usage_tracking_interval_seconds';
@@ -83,9 +84,59 @@ void onBackgroundServiceStart(ServiceInstance service) async {
   // Broadcast initial status
   service.invoke(kEventStatus, {'running': true});
 
+  // ── Usage collection ──────────────────────────────────────────────────────
+
   var isCollectingUsage = false;
 
-  // Periodic tracking timer
+  /// One collection cycle. Uses [isCollectingUsage] to prevent re-entry.
+  Future<void> tryCollectUsage() async {
+    if (!Platform.isAndroid || isCollectingUsage) return;
+    isCollectingUsage = true;
+    try {
+      final hasPermission = await usageService.hasUsageStatsPermission();
+      if (!hasPermission) {
+        debugPrint('[TrackOS] Usage: no permission — skipping');
+        return;
+      }
+
+      // Reload to pick up any changes written by the main isolate.
+      await prefs.reload();
+      final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+      final lastCollectedAt =
+          prefs.getInt(kPrefLastUsageCollectionKey) ?? (now - usageIntervalSeconds * 1000);
+      if (lastCollectedAt >= now) {
+        debugPrint('[TrackOS] Usage: recently collected, skipping');
+        return;
+      }
+
+      debugPrint('[TrackOS] Usage: querying window [$lastCollectedAt, $now]');
+      final summaries = await usageService.queryUsageSummaries(
+        startMs: lastCollectedAt,
+        endMs: now,
+      );
+      debugPrint('[TrackOS] Usage: ${summaries.length} records returned');
+
+      if (summaries.isNotEmpty) {
+        await storage.insertUsageSummaries(summaries);
+        // Notify the UI so it can refresh the counter.
+        service.invoke(kEventUsage, {'count': summaries.length});
+      }
+      await prefs.setInt(kPrefLastUsageCollectionKey, now);
+    } catch (e, st) {
+      // Log rather than silently swallow so issues are visible in adb logcat.
+      debugPrint('[TrackOS] Usage collection error: $e\n$st');
+    } finally {
+      isCollectingUsage = false;
+    }
+  }
+
+  // Run once immediately (don't make the user wait a full interval).
+  tryCollectUsage();
+  // Then repeat on the configured interval.
+  Timer.periodic(Duration(seconds: usageIntervalSeconds), (_) => tryCollectUsage());
+
+  // ── Location tracking ─────────────────────────────────────────────────────
+
   Timer.periodic(Duration(seconds: intervalSeconds), (_) async {
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -103,7 +154,7 @@ void onBackgroundServiceStart(ServiceInstance service) async {
 
       await storage.insert(record);
 
-      // Push real-time update to UI if it is foreground
+      // Push real-time update to UI if it is in foreground.
       service.invoke(kEventLocation, {
         'lat': record.lat,
         'lng': record.lng,
@@ -112,40 +163,8 @@ void onBackgroundServiceStart(ServiceInstance service) async {
         'speed': record.speed,
         'timestamp': record.timestamp,
       });
-    } catch (_) {
-      // Silently ignore individual collection errors
-    }
-  });
-
-  Timer.periodic(Duration(seconds: usageIntervalSeconds), (_) async {
-    if (!Platform.isAndroid || isCollectingUsage) {
-      return;
-    }
-
-    isCollectingUsage = true;
-    try {
-      final hasPermission = await usageService.hasUsageStatsPermission();
-      if (!hasPermission) {
-        return;
-      }
-
-      final now = DateTime.now().toUtc().millisecondsSinceEpoch;
-      final lastCollectedAt = prefs.getInt(kPrefLastUsageCollectionKey) ?? (now - usageIntervalSeconds * 1000);
-      if (lastCollectedAt >= now) {
-        return;
-      }
-
-      final summaries = await usageService.queryUsageSummaries(
-        startMs: lastCollectedAt,
-        endMs: now,
-      );
-
-      await storage.insertUsageSummaries(summaries);
-      await prefs.setInt(kPrefLastUsageCollectionKey, now);
-    } catch (_) {
-      // Ignore usage collection errors and retry in the next cycle.
-    } finally {
-      isCollectingUsage = false;
+    } catch (e) {
+      debugPrint('[TrackOS] Location error: $e');
     }
   });
 }
@@ -170,4 +189,8 @@ class BackgroundServiceManager {
   /// Listen for service status events.
   static Stream<Map<String, dynamic>?> get statusStream =>
       _service.on(kEventStatus);
+
+  /// Listen for usage-stats collection events from the background service.
+  static Stream<Map<String, dynamic>?> get usageStream =>
+      _service.on(kEventUsage);
 }

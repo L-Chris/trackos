@@ -31,6 +31,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Local plugin — registers UsageStatsPlugin for ALL FlutterEngine instances
+  # (including flutter_background_service) via GeneratedPluginRegistrant.
+  trackos_usage_stats:
+    path: packages/trackos_usage_stats
+
   cupertino_icons: ^1.0.8
   geolocator: ^13.0.0
   flutter_background_service: ^5.0.0

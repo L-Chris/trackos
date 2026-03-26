@@ -27,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   StreamSubscription? _locationSub;
   StreamSubscription? _statusSub;
+  StreamSubscription? _usageSub;
 
   @override
   void initState() {
@@ -37,9 +38,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Re-check permissions when the user returns from system Settings
     if (state == AppLifecycleState.resumed) {
       _checkPermissions();
+      _refreshCounts();
+    }
+  }
+
+  Future<void> _refreshCounts() async {
+    final count = await StorageService().count();
+    final usageCount = await StorageService().countUsageSummaries();
+    if (mounted) {
+      setState(() {
+        _totalRecords = count;
+        _usageSummaryCount = usageCount;
+      });
     }
   }
 
@@ -82,6 +94,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
 
+    _usageSub = BackgroundServiceManager.usageStream.listen((data) async {
+      if (data == null) return;
+      final usageCount = await StorageService().countUsageSummaries();
+      if (mounted) {
+        setState(() => _usageSummaryCount = usageCount);
+      }
+    });
+
     _statusSub = BackgroundServiceManager.statusStream.listen((data) {
       if (data == null) return;
       if (mounted) {
@@ -97,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _locationSub?.cancel();
     _statusSub?.cancel();
+    _usageSub?.cancel();
     super.dispose();
   }
 
@@ -151,11 +172,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _syncing = true);
     final result = await SyncService().syncAllPending();
     final usageCount = await StorageService().countUsageSummaries();
-    setState(() => _syncing = false);
+    if (mounted) setState(() { _syncing = false; _usageSummaryCount = usageCount; });
+
     if (result.locations == -1 || result.usageSummaries == -1) {
       _showSnack('未配置服务器 URL，请在"设置"中填写');
+    } else if (result.hasError) {
+      _showSnack('同步失败：${result.error}');
     } else {
-      setState(() => _usageSummaryCount = usageCount);
       _showSnack('已同步定位 ${result.locations} 条，应用使用 ${result.usageSummaries} 条');
     }
   }
@@ -181,24 +204,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _StatusCard(running: _serviceRunning),
-            const SizedBox(height: 16),
-            _PermissionCard(
-              hasPermission: _hasPermission,
-              hasBackground: _hasBackgroundPermission,
-              locationServiceEnabled: _locationServiceEnabled,
-              onRefresh: _checkPermissions,
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _StatusCard(running: _serviceRunning),
+                    const SizedBox(height: 16),
+                    _PermissionCard(
+                      hasPermission: _hasPermission,
+                      hasBackground: _hasBackgroundPermission,
+                      locationServiceEnabled: _locationServiceEnabled,
+                      hasUsagePermission: _hasUsagePermission,
+                      usageSummaryCount: _usageSummaryCount,
+                      onOpenSettings: _openUsageAccessSettings,
+                      onRefresh: _checkPermissions,
+                    ),
+                    const SizedBox(height: 16),
+                    _LocationCard(data: _latestLocation, totalRecords: _totalRecords),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 16),
-            _UsagePermissionCard(
-              hasUsagePermission: _hasUsagePermission,
-              usageSummaryCount: _usageSummaryCount,
-              onOpenSettings: _openUsageAccessSettings,
-              onRefresh: _checkPermissions,
-            ),
-            const SizedBox(height: 16),
-            _LocationCard(data: _latestLocation, totalRecords: _totalRecords),
-            const Spacer(),
             FilledButton.icon(
               onPressed: _toggleService,
               icon: Icon(_serviceRunning ? Icons.stop : Icons.play_arrow),
@@ -261,11 +289,17 @@ class _PermissionCard extends StatelessWidget {
     required this.hasPermission,
     required this.hasBackground,
     required this.locationServiceEnabled,
+    required this.hasUsagePermission,
+    required this.usageSummaryCount,
+    required this.onOpenSettings,
     required this.onRefresh,
   });
   final bool hasPermission;
   final bool hasBackground;
   final bool locationServiceEnabled;
+  final bool hasUsagePermission;
+  final int usageSummaryCount;
+  final Future<void> Function() onOpenSettings;
   final VoidCallback onRefresh;
 
   @override
@@ -300,6 +334,25 @@ class _PermissionCard extends StatelessWidget {
             _PermissionRow(
               label: '位置权限（始终允许，后台必须）',
               granted: hasBackground,
+            ),
+            const Divider(height: 16),
+            _PermissionRow(
+              label: '应用使用情况访问（Usage Access）',
+              granted: hasUsagePermission,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '本地已采集 $usageSummaryCount 条应用使用汇总记录',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: onOpenSettings,
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('打开使用情况访问设置'),
+              ),
             ),
           ],
         ),
@@ -381,64 +434,6 @@ class _LocationCard extends StatelessWidget {
   }
 }
 
-class _UsagePermissionCard extends StatelessWidget {
-  const _UsagePermissionCard({
-    required this.hasUsagePermission,
-    required this.usageSummaryCount,
-    required this.onOpenSettings,
-    required this.onRefresh,
-  });
-
-  final bool hasUsagePermission;
-  final int usageSummaryCount;
-  final Future<void> Function() onOpenSettings;
-  final VoidCallback onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.apps, size: 18),
-                const SizedBox(width: 8),
-                const Text('应用使用权限', style: TextStyle(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: onRefresh,
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('刷新'),
-                ),
-              ],
-            ),
-            _PermissionRow(
-              label: 'Usage Access（Android）',
-              granted: hasUsagePermission,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '本地已采集 $usageSummaryCount 条应用使用汇总记录',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: onOpenSettings,
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('打开使用情况访问设置'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _InfoRow extends StatelessWidget {
   const _InfoRow(this.label, this.value);
