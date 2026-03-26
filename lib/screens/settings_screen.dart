@@ -71,123 +71,134 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- Tracking Interval ---
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
+            Expanded(
+              child: SingleChildScrollView(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      '追踪间隔',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '当前：${_intervalLabels[_intervalOptions.indexOf(_intervalSeconds)]}',
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      children: List.generate(_intervalOptions.length, (i) {
-                        final selected = _intervalOptions[i] == _intervalSeconds;
-                        return ChoiceChip(
-                          label: Text(_intervalLabels[i]),
-                          selected: selected,
-                          onSelected: (_) {
-                            setState(() => _intervalSeconds = _intervalOptions[i]);
-                          },
-                        );
-                      }),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '应用使用采集间隔',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '当前：${_usageIntervalLabels[_usageIntervalOptions.indexOf(_usageIntervalSeconds)]}',
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      children: List.generate(_usageIntervalOptions.length, (i) {
-                        final selected = _usageIntervalOptions[i] == _usageIntervalSeconds;
-                        return ChoiceChip(
-                          label: Text(_usageIntervalLabels[i]),
-                          selected: selected,
-                          onSelected: (_) {
-                            setState(() => _usageIntervalSeconds = _usageIntervalOptions[i]);
-                          },
-                        );
-                      }),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: SwitchListTile(
-                value: _usageEventsEnabled,
-                onChanged: (value) => setState(() => _usageEventsEnabled = value),
-                title: const Text('采集设备/前台切换事件'),
-                subtitle: const Text('包括前台切换、亮屏/灭屏、锁屏/解锁事件'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // --- Server URL ---
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '服务器 URL',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      '留空则不上传。格式：http://your-server:port',
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _serverUrlController,
-                      decoration: const InputDecoration(
-                        hintText: 'https://track-api.rethinkos.com',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.cloud),
+                    // --- Tracking Interval ---
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '追踪间隔',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '当前：${_intervalLabels[_intervalOptions.indexOf(_intervalSeconds)]}',
+                              style: const TextStyle(color: Colors.grey),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: List.generate(_intervalOptions.length, (i) {
+                                final selected = _intervalOptions[i] == _intervalSeconds;
+                                return ChoiceChip(
+                                  label: Text(_intervalLabels[i]),
+                                  selected: selected,
+                                  onSelected: (_) {
+                                    setState(() => _intervalSeconds = _intervalOptions[i]);
+                                  },
+                                );
+                              }),
+                            ),
+                          ],
+                        ),
                       ),
-                      keyboardType: TextInputType.url,
-                      autocorrect: false,
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '会向 {url}/api/locations/report/batch 发送批量 POST 请求，\n'
-                      '应用使用汇总会额外发送到 {url}/api/app-usage-summaries/report/batch，\n'
-                      '事件流会发送到 {url}/api/usage-events/report/batch。',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '应用使用采集间隔',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '当前：${_usageIntervalLabels[_usageIntervalOptions.indexOf(_usageIntervalSeconds)]}',
+                              style: const TextStyle(color: Colors.grey),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: List.generate(_usageIntervalOptions.length, (i) {
+                                final selected = _usageIntervalOptions[i] == _usageIntervalSeconds;
+                                return ChoiceChip(
+                                  label: Text(_usageIntervalLabels[i]),
+                                  selected: selected,
+                                  onSelected: (_) {
+                                    setState(() => _usageIntervalSeconds = _usageIntervalOptions[i]);
+                                  },
+                                );
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Card(
+                      child: SwitchListTile(
+                        value: _usageEventsEnabled,
+                        onChanged: (value) => setState(() => _usageEventsEnabled = value),
+                        title: const Text('采集设备/前台切换事件'),
+                        subtitle: const Text('包括前台切换、亮屏/灭屏、锁屏/解锁事件'),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // --- Server URL ---
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '服务器 URL',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              '留空则不上传。格式：http://your-server:port',
+                              style: TextStyle(color: Colors.grey, fontSize: 12),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _serverUrlController,
+                              decoration: const InputDecoration(
+                                hintText: 'https://track-api.rethinkos.com',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.cloud),
+                              ),
+                              keyboardType: TextInputType.url,
+                              autocorrect: false,
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              '会向 {url}/api/locations/report/batch 发送批量 POST 请求，\n'
+                              '应用使用汇总会额外发送到 {url}/api/app-usage-summaries/report/batch，\n'
+                              '事件流会发送到 {url}/api/usage-events/report/batch。',
+                              style: TextStyle(fontSize: 11, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
               icon: _saving
@@ -202,7 +213,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
-            const SizedBox(height: 16),
           ],
         ),
       ),
