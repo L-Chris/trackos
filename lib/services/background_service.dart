@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'usage_service.dart';
 import 'storage_service.dart';
+import 'sync_service.dart';
 import '../models/location_record.dart';
 import '../models/usage_event_record.dart';
 
@@ -16,6 +17,7 @@ const String kEventUsage = 'usage';
 const String kActionStop = 'stopService';
 const String kPrefIntervalKey = 'tracking_interval_seconds';
 const String kPrefUsageIntervalKey = 'usage_tracking_interval_seconds';
+const String kPrefAutoSyncIntervalKey = 'auto_sync_interval_seconds';
 const String kPrefUsageEventsEnabledKey = 'usage_events_enabled';
 const String kPrefLastUsageCollectionKey = 'last_usage_collection_timestamp_ms';
 const String kPrefLastUsageEventCollectionKey = 'last_usage_event_collection_timestamp_ms';
@@ -77,6 +79,7 @@ void onBackgroundServiceStart(ServiceInstance service) async {
   final prefs = await SharedPreferences.getInstance();
   int intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30;
   int usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 300;
+  int autoSyncIntervalSeconds = prefs.getInt(kPrefAutoSyncIntervalKey) ?? 600;
 
   // Android: force built-in LocationManager (no Google Play Services needed)
   final locationSettings = AndroidSettings(
@@ -154,6 +157,34 @@ void onBackgroundServiceStart(ServiceInstance service) async {
   tryCollectUsage();
   // Then repeat on the configured interval.
   Timer.periodic(Duration(seconds: usageIntervalSeconds), (_) => tryCollectUsage());
+
+  // ── Background sync ───────────────────────────────────────────────────────
+
+  var isSyncing = false;
+
+  Future<void> trySyncPending() async {
+    if (isSyncing) return;
+    isSyncing = true;
+    try {
+      final result = await SyncService().syncAllPending();
+      if (result.hasError) {
+        debugPrint('[TrackOS] Auto sync failed: ${result.error}');
+      } else if (result.locations > 0 || result.usageSummaries > 0 || result.usageEvents > 0) {
+        debugPrint(
+          '[TrackOS] Auto sync uploaded '
+          'locations=${result.locations}, '
+          'usageSummaries=${result.usageSummaries}, '
+          'usageEvents=${result.usageEvents}',
+        );
+      }
+    } catch (e, st) {
+      debugPrint('[TrackOS] Auto sync error: $e\n$st');
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  Timer.periodic(Duration(seconds: autoSyncIntervalSeconds), (_) => trySyncPending());
 
   // ── Location tracking ─────────────────────────────────────────────────────
 

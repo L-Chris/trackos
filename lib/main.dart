@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/background_service.dart';
 import 'screens/home_screen.dart';
-import 'screens/data_viewer_screen.dart';
 import 'screens/settings_screen.dart';
 
 Future<void> main() async {
@@ -38,7 +37,6 @@ class _MainShellState extends State<MainShell> {
 
   static const _screens = [
     HomeScreen(),
-    DataViewerScreen(),
     SettingsScreen(),
   ];
 
@@ -57,11 +55,6 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.location_on_outlined),
             selectedIcon: Icon(Icons.location_on),
             label: '追踪',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.list_alt_outlined),
-            selectedIcon: Icon(Icons.list_alt),
-            label: '数据',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

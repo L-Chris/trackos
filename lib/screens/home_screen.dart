@@ -16,11 +16,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _serviceRunning = false;
+  bool _autoStartEnabled = true;
   bool _hasPermission = false;
   bool _hasBackgroundPermission = false;
   bool _hasUsagePermission = false;
   bool _locationServiceEnabled = true;
-  Map<String, dynamic>? _latestLocation;
   int _totalRecords = 0;
   int _usageSummaryCount = 0;
   int _usageEventCount = 0;
@@ -40,9 +40,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _checkPermissions();
-      _refreshCounts();
+      _resumeRefresh();
     }
+  }
+
+  Future<void> _resumeRefresh() async {
+    await _checkPermissions();
+    await _ensureTrackingStarted();
+    await _refreshCounts();
   }
 
   Future<void> _refreshCounts() async {
@@ -70,6 +75,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _usageSummaryCount = usageCount;
       _usageEventCount = usageEventCount;
     });
+    await _ensureTrackingStarted();
     _subscribeToService();
   }
 
@@ -87,13 +93,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _ensureTrackingStarted() async {
+    final running = await BackgroundServiceManager.isRunning();
+    final canStart = _hasPermission && _hasBackgroundPermission && _locationServiceEnabled;
+
+    if (mounted) {
+      setState(() => _serviceRunning = running);
+    }
+
+    if (!_autoStartEnabled || !canStart || running) {
+      return;
+    }
+
+    await BackgroundServiceManager.start();
+    if (mounted) {
+      setState(() => _serviceRunning = true);
+    }
+  }
+
+  Future<void> _toggleService() async {
+    if (_serviceRunning) {
+      await BackgroundServiceManager.stop();
+      if (mounted) {
+        setState(() {
+          _serviceRunning = false;
+          _autoStartEnabled = false;
+        });
+      }
+      return;
+    }
+
+    final canStart = _hasPermission && _hasBackgroundPermission && _locationServiceEnabled;
+    if (!canStart) {
+      _showBackgroundPermissionDialog();
+      return;
+    }
+
+    await BackgroundServiceManager.start();
+    if (mounted) {
+      setState(() {
+        _serviceRunning = true;
+        _autoStartEnabled = true;
+      });
+    }
+  }
+
   void _subscribeToService() {
-    _locationSub = BackgroundServiceManager.locationStream.listen((data) async {
-      if (data == null) return;
+    _locationSub = BackgroundServiceManager.locationStream.listen((_) async {
       final count = await StorageService().count();
       if (mounted) {
         setState(() {
-          _latestLocation = data;
           _totalRecords = count;
         });
       }
@@ -128,27 +177,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _statusSub?.cancel();
     _usageSub?.cancel();
     super.dispose();
-  }
-
-  Future<void> _toggleService() async {
-    if (_serviceRunning) {
-      await BackgroundServiceManager.stop();
-      setState(() => _serviceRunning = false);
-    } else {
-      if (!_hasPermission) {
-        await _checkPermissions();
-        if (!_hasPermission) {
-          _showSnack('请先授权位置权限');
-          return;
-        }
-      }
-      if (!_hasBackgroundPermission) {
-        _showBackgroundPermissionDialog();
-        return;
-      }
-      await BackgroundServiceManager.start();
-      setState(() => _serviceRunning = true);
-    }
   }
 
   void _showBackgroundPermissionDialog() {
@@ -225,8 +253,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _StatusCard(running: _serviceRunning),
-                    const SizedBox(height: 16),
                     _PermissionCard(
                       hasPermission: _hasPermission,
                       hasBackground: _hasBackgroundPermission,
@@ -235,10 +261,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       usageSummaryCount: _usageSummaryCount,
                       usageEventCount: _usageEventCount,
                       onOpenSettings: _openUsageAccessSettings,
-                      onRefresh: _checkPermissions,
+                      onRefresh: _resumeRefresh,
+                      onOpenLocationSettings: _showBackgroundPermissionDialog,
                     ),
                     const SizedBox(height: 16),
-                    _LocationCard(data: _latestLocation, totalRecords: _totalRecords),
+                    _CollectionOverviewCard(
+                      totalRecords: _totalRecords,
+                      usageSummaryCount: _usageSummaryCount,
+                      usageEventCount: _usageEventCount,
+                    ),
                   ],
                 ),
               ),
@@ -246,15 +277,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: _toggleService,
-              icon: Icon(_serviceRunning ? Icons.stop : Icons.play_arrow),
+              icon: Icon(_serviceRunning ? Icons.pause_circle : Icons.play_circle),
               label: Text(_serviceRunning ? '停止追踪' : '开始追踪'),
               style: FilledButton.styleFrom(
-                backgroundColor:
-                    _serviceRunning ? Colors.red : Colors.green,
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _syncing ? null : _syncNow,
               icon: _syncing
@@ -274,33 +303,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 }
 
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.running});
-  final bool running;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: running ? Colors.green.shade50 : Colors.grey.shade100,
-      child: ListTile(
-        leading: Icon(
-          running ? Icons.location_on : Icons.location_off,
-          color: running ? Colors.green : Colors.grey,
-          size: 36,
-        ),
-        title: Text(
-          running ? '追踪进行中' : '追踪已停止',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: running ? Colors.green.shade800 : Colors.grey.shade700,
-          ),
-        ),
-        subtitle: Text(running ? '后台前台服务运行中，持续采集坐标' : '点击下方按钮开始追踪'),
-      ),
-    );
-  }
-}
-
 class _PermissionCard extends StatelessWidget {
   const _PermissionCard({
     required this.hasPermission,
@@ -311,6 +313,7 @@ class _PermissionCard extends StatelessWidget {
     required this.usageEventCount,
     required this.onOpenSettings,
     required this.onRefresh,
+    required this.onOpenLocationSettings,
   });
   final bool hasPermission;
   final bool hasBackground;
@@ -319,7 +322,8 @@ class _PermissionCard extends StatelessWidget {
   final int usageSummaryCount;
   final int usageEventCount;
   final Future<void> Function() onOpenSettings;
-  final VoidCallback onRefresh;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onOpenLocationSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -333,15 +337,20 @@ class _PermissionCard extends StatelessWidget {
               children: [
                 const Icon(Icons.security, size: 18),
                 const SizedBox(width: 8),
-                const Text('权限状态', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('权限与自动追踪', style: TextStyle(fontWeight: FontWeight.bold)),
                 const Spacer(),
                 TextButton.icon(
-                  onPressed: onRefresh,
+                  onPressed: () => onRefresh(),
                   icon: const Icon(Icons.refresh, size: 16),
                   label: const Text('刷新'),
                 ),
               ],
             ),
+            const Text(
+              '应用打开后会自动尝试开启后台追踪；如果权限不足，需要先完成授权。',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
             _PermissionRow(
               label: '系统位置服务（GPS 开关）',
               granted: locationServiceEnabled,
@@ -354,6 +363,17 @@ class _PermissionCard extends StatelessWidget {
               label: '位置权限（始终允许，后台必须）',
               granted: hasBackground,
             ),
+            if (!hasPermission || !hasBackground || !locationServiceEnabled) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  onPressed: onOpenLocationSettings,
+                  icon: const Icon(Icons.my_location),
+                  label: const Text('去完善位置权限'),
+                ),
+              ),
+            ],
             const Divider(height: 16),
             _PermissionRow(
               label: '应用使用情况访问（Usage Access）',
@@ -404,10 +424,16 @@ class _PermissionRow extends StatelessWidget {
   }
 }
 
-class _LocationCard extends StatelessWidget {
-  const _LocationCard({required this.data, required this.totalRecords});
-  final Map<String, dynamic>? data;
+class _CollectionOverviewCard extends StatelessWidget {
+  const _CollectionOverviewCard({
+    required this.totalRecords,
+    required this.usageSummaryCount,
+    required this.usageEventCount,
+  });
+
   final int totalRecords;
+  final int usageSummaryCount;
+  final int usageEventCount;
 
   @override
   Widget build(BuildContext context) {
@@ -419,33 +445,15 @@ class _LocationCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.gps_fixed, size: 18),
+                const Icon(Icons.analytics_outlined, size: 18),
                 const SizedBox(width: 8),
-                const Text('最新坐标', style: TextStyle(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                Text(
-                  '共 $totalRecords 条',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+                const Text('本地采集概览', style: TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const Divider(),
-            if (data == null)
-              const Text('暂无数据', style: TextStyle(color: Colors.grey))
-            else ...[
-              _InfoRow('纬度', '${(data!['lat'] as num).toDouble().toStringAsFixed(6)}°'),
-              _InfoRow('经度', '${(data!['lng'] as num).toDouble().toStringAsFixed(6)}°'),
-              _InfoRow('精度', '${(data!['accuracy'] as num).toDouble().toStringAsFixed(1)} m'),
-              _InfoRow('海拔', '${(data!['altitude'] as num).toDouble().toStringAsFixed(1)} m'),
-              _InfoRow('速度', '${(data!['speed'] as num).toDouble().toStringAsFixed(2)} m/s'),
-              _InfoRow(
-                '时间',
-                DateTime.fromMillisecondsSinceEpoch(data!['timestamp'] as int)
-                    .toLocal()
-                    .toString()
-                    .substring(0, 19),
-              ),
-            ],
+            _InfoRow('定位记录', '$totalRecords 条'),
+            _InfoRow('应用使用汇总', '$usageSummaryCount 条'),
+            _InfoRow('设备/前台事件', '$usageEventCount 条'),
           ],
         ),
       ),

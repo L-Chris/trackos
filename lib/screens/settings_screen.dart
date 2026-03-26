@@ -15,9 +15,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _intervalLabels = ['5 秒', '10 秒', '30 秒', '1 分钟', '5 分钟'];
   static const _usageIntervalOptions = [60, 300, 900, 1800];
   static const _usageIntervalLabels = ['1 分钟', '5 分钟', '15 分钟', '30 分钟'];
+  static const _autoSyncIntervalOptions = [300, 600, 1800, 3600];
+  static const _autoSyncIntervalLabels = ['5 分钟', '10 分钟', '30 分钟', '1 小时'];
 
   int _intervalSeconds = 30;
   int _usageIntervalSeconds = 300;
+  int _autoSyncIntervalSeconds = 600;
   bool _usageEventsEnabled = true;
   final _serverUrlController = TextEditingController();
   bool _saving = false;
@@ -33,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30;
       _usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 300;
+      _autoSyncIntervalSeconds = prefs.getInt(kPrefAutoSyncIntervalKey) ?? 600;
       _usageEventsEnabled = prefs.getBool(kPrefUsageEventsEnabledKey) ?? true;
       _serverUrlController.text = prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com';
     });
@@ -43,6 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(kPrefIntervalKey, _intervalSeconds);
     await prefs.setInt(kPrefUsageIntervalKey, _usageIntervalSeconds);
+    await prefs.setInt(kPrefAutoSyncIntervalKey, _autoSyncIntervalSeconds);
     await prefs.setBool(kPrefUsageEventsEnabledKey, _usageEventsEnabled);
     await prefs.setString(kPrefServerUrl, _serverUrlController.text.trim());
     setState(() => _saving = false);
@@ -138,6 +143,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   selected: selected,
                                   onSelected: (_) {
                                     setState(() => _usageIntervalSeconds = _usageIntervalOptions[i]);
+                                  },
+                                );
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '自动同步间隔',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '当前：${_autoSyncIntervalLabels[_autoSyncIntervalOptions.indexOf(_autoSyncIntervalSeconds)]}',
+                              style: const TextStyle(color: Colors.grey),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              '后台追踪服务运行时，会按这个频率自动上传到服务器。',
+                              style: TextStyle(color: Colors.grey, fontSize: 12),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: List.generate(_autoSyncIntervalOptions.length, (i) {
+                                final selected = _autoSyncIntervalOptions[i] == _autoSyncIntervalSeconds;
+                                return ChoiceChip(
+                                  label: Text(_autoSyncIntervalLabels[i]),
+                                  selected: selected,
+                                  onSelected: (_) {
+                                    setState(() => _autoSyncIntervalSeconds = _autoSyncIntervalOptions[i]);
                                   },
                                 );
                               }),
