@@ -2,9 +2,11 @@ package com.rethinkos.trackos
 
 import android.app.Activity
 import android.app.AppOpsManager
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -80,6 +82,12 @@ class UsageStatsPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     ?: System.currentTimeMillis()).toLong()
                 result.success(queryUsageSummaries(startMs, endMs))
             }
+            "queryUsageEvents" -> {
+                val startMs = (call.argument<Number>("startMs") ?: 0L).toLong()
+                val endMs = (call.argument<Number>("endMs")
+                    ?: System.currentTimeMillis()).toLong()
+                result.success(queryUsageEvents(startMs, endMs))
+            }
             else -> result.notImplemented()
         }
     }
@@ -126,6 +134,61 @@ class UsageStatsPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 )
             }
             .toList()
+    }
+
+    private fun queryUsageEvents(startMs: Long, endMs: Long): List<Map<String, Any?>> {
+        if (!hasUsageStatsPermission()) return emptyList()
+        if (startMs >= endMs) return emptyList()
+
+        val usageStatsManager =
+            appContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val usageEvents = usageStatsManager.queryEvents(startMs, endMs)
+        val event = UsageEvents.Event()
+        val records = mutableListOf<Map<String, Any?>>()
+
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            val normalizedType = normalizeEventType(event.eventType) ?: continue
+            val packageName = event.packageName?.takeIf { it.isNotBlank() }
+            val className = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                event.className?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
+            val timeStamp = event.timeStamp
+            val recordKey = listOf(
+                normalizedType,
+                timeStamp.toString(),
+                packageName ?: "",
+                className ?: "",
+            ).joinToString(":")
+
+            records += mapOf(
+                "recordKey" to recordKey,
+                "eventType" to normalizedType,
+                "packageName" to packageName,
+                "className" to className,
+                "occurredAtMs" to timeStamp,
+                "source" to "android_usage_events",
+                "metadata" to null,
+            )
+        }
+
+        return records
+    }
+
+    private fun normalizeEventType(eventType: Int): String? {
+        return when (eventType) {
+            UsageEvents.Event.ACTIVITY_RESUMED -> "ACTIVITY_RESUMED"
+            UsageEvents.Event.ACTIVITY_PAUSED -> "ACTIVITY_PAUSED"
+            UsageEvents.Event.MOVE_TO_FOREGROUND -> "MOVE_TO_FOREGROUND"
+            UsageEvents.Event.MOVE_TO_BACKGROUND -> "MOVE_TO_BACKGROUND"
+            UsageEvents.Event.SCREEN_INTERACTIVE -> "SCREEN_INTERACTIVE"
+            UsageEvents.Event.SCREEN_NON_INTERACTIVE -> "SCREEN_NON_INTERACTIVE"
+            UsageEvents.Event.KEYGUARD_SHOWN -> "KEYGUARD_SHOWN"
+            UsageEvents.Event.KEYGUARD_HIDDEN -> "KEYGUARD_HIDDEN"
+            else -> null
+        }
     }
 }
 

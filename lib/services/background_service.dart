@@ -15,7 +15,9 @@ const String kEventUsage = 'usage';
 const String kActionStop = 'stopService';
 const String kPrefIntervalKey = 'tracking_interval_seconds';
 const String kPrefUsageIntervalKey = 'usage_tracking_interval_seconds';
+const String kPrefUsageEventsEnabledKey = 'usage_events_enabled';
 const String kPrefLastUsageCollectionKey = 'last_usage_collection_timestamp_ms';
+const String kPrefLastUsageEventCollectionKey = 'last_usage_event_collection_timestamp_ms';
 const String kNotificationChannelId = 'trackos_location';
 const int kForegroundNotificationId = 888;
 
@@ -114,14 +116,31 @@ void onBackgroundServiceStart(ServiceInstance service) async {
         startMs: lastCollectedAt,
         endMs: now,
       );
+      final usageEventsEnabled = prefs.getBool(kPrefUsageEventsEnabledKey) ?? true;
+      final lastEventCollectedAt = prefs.getInt(kPrefLastUsageEventCollectionKey) ?? lastCollectedAt;
+      final events = usageEventsEnabled
+          ? await usageService.queryUsageEvents(
+              startMs: lastEventCollectedAt,
+              endMs: now,
+            )
+          : const [];
       debugPrint('[TrackOS] Usage: ${summaries.length} records returned');
+      debugPrint('[TrackOS] Usage events: ${events.length} records returned');
 
       if (summaries.isNotEmpty) {
         await storage.insertUsageSummaries(summaries);
-        // Notify the UI so it can refresh the counter.
-        service.invoke(kEventUsage, {'count': summaries.length});
       }
+      if (events.isNotEmpty) {
+        await storage.insertUsageEvents(events);
+      }
+      service.invoke(kEventUsage, {
+        'summaryCount': summaries.length,
+        'eventCount': events.length,
+      });
       await prefs.setInt(kPrefLastUsageCollectionKey, now);
+      if (usageEventsEnabled) {
+        await prefs.setInt(kPrefLastUsageEventCollectionKey, now);
+      }
     } catch (e, st) {
       // Log rather than silently swallow so issues are visible in adb logcat.
       debugPrint('[TrackOS] Usage collection error: $e\n$st');

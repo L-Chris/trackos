@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_usage_summary_record.dart';
 import '../models/location_record.dart';
+import '../models/usage_event_record.dart';
 import 'storage_service.dart';
 
 const String kPrefServerUrl = 'server_url';
@@ -11,12 +12,14 @@ const String kSyncDeviceId = 'android-device';
 class SyncCounts {
   final int locations;
   final int usageSummaries;
+  final int usageEvents;
   /// Non-null when a network / server error occurred during sync.
   final String? error;
 
   const SyncCounts({
     required this.locations,
     required this.usageSummaries,
+    required this.usageEvents,
     this.error,
   });
 
@@ -117,9 +120,39 @@ class SyncService {
     return 0;
   }
 
+  Future<int> syncPendingUsageEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    if (serverUrl.isEmpty) return -1;
+
+    final records = await _storage.queryUnsyncedUsageEvents(limit: 200);
+    if (records.isEmpty) return 0;
+
+    final response = await _dio.post(
+      '$serverUrl/api/usage-events/report/batch',
+      data: _buildUsageEventBatchPayload(records),
+    );
+
+    if (response.statusCode != null &&
+        response.statusCode! >= 200 &&
+        response.statusCode! < 300) {
+      final acceptedCount = _extractAcceptedCount(response.data, records.length);
+      final syncedIds = records
+          .take(acceptedCount)
+          .map((record) => record.id)
+          .whereType<int>()
+          .toList();
+
+      await _storage.markUsageEventsSynced(syncedIds);
+      return syncedIds.length;
+    }
+    return 0;
+  }
+
   Future<SyncCounts> syncAllPending() async {
     int locations = 0;
     int usageSummaries = 0;
+    int usageEvents = 0;
     String? error;
 
     try {
@@ -138,9 +171,18 @@ class SyncService {
       error ??= e.toString();
     }
 
+    try {
+      usageEvents = await syncPendingUsageEvents();
+    } on DioException catch (e) {
+      error ??= _formatDioError(e);
+    } catch (e) {
+      error ??= e.toString();
+    }
+
     return SyncCounts(
       locations: locations,
       usageSummaries: usageSummaries,
+      usageEvents: usageEvents,
       error: error,
     );
   }
@@ -199,6 +241,26 @@ class SyncService {
       'lastUsedAt': record.lastUsedMs == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(record.lastUsedMs!, isUtc: true).toIso8601String(),
+    };
+  }
+
+  Map<String, dynamic> _buildUsageEventBatchPayload(List<UsageEventRecord> records) {
+    return {
+      'userId': kSyncUserId,
+      'deviceId': kSyncDeviceId,
+      'records': records.map(_buildUsageEventPayload).toList(),
+    };
+  }
+
+  Map<String, dynamic> _buildUsageEventPayload(UsageEventRecord record) {
+    return {
+      'recordKey': '${kSyncDeviceId}:${record.recordKey}',
+      'eventType': record.eventType,
+      'packageName': record.packageName,
+      'className': record.className,
+      'occurredAt': DateTime.fromMillisecondsSinceEpoch(record.occurredAtMs, isUtc: true).toIso8601String(),
+      'source': record.source,
+      'metadata': record.metadata,
     };
   }
 

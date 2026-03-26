@@ -18,6 +18,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   int _intervalSeconds = 30;
   int _usageIntervalSeconds = 300;
+  bool _usageEventsEnabled = true;
   final _serverUrlController = TextEditingController();
   bool _saving = false;
 
@@ -32,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30;
       _usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 300;
+      _usageEventsEnabled = prefs.getBool(kPrefUsageEventsEnabledKey) ?? true;
       _serverUrlController.text = prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com';
     });
   }
@@ -41,6 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(kPrefIntervalKey, _intervalSeconds);
     await prefs.setInt(kPrefUsageIntervalKey, _usageIntervalSeconds);
+    await prefs.setBool(kPrefUsageEventsEnabledKey, _usageEventsEnabled);
     await prefs.setString(kPrefServerUrl, _serverUrlController.text.trim());
     setState(() => _saving = false);
     if (mounted) {
@@ -137,6 +140,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            Card(
+              child: SwitchListTile(
+                value: _usageEventsEnabled,
+                onChanged: (value) => setState(() => _usageEventsEnabled = value),
+                title: const Text('采集设备/前台切换事件'),
+                subtitle: const Text('包括前台切换、亮屏/灭屏、锁屏/解锁事件'),
+              ),
+            ),
+            const SizedBox(height: 16),
             // --- Server URL ---
             Card(
               child: Padding(
@@ -167,7 +179,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 8),
                     const Text(
                       '会向 {url}/api/locations/report/batch 发送批量 POST 请求，\n'
-                      '应用使用汇总会额外发送到 {url}/api/app-usage-summaries/report/batch。',
+                      '应用使用汇总会额外发送到 {url}/api/app-usage-summaries/report/batch，\n'
+                      '事件流会发送到 {url}/api/usage-events/report/batch。',
                       style: TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ],

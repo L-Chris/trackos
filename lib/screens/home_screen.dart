@@ -23,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Map<String, dynamic>? _latestLocation;
   int _totalRecords = 0;
   int _usageSummaryCount = 0;
+  int _usageEventCount = 0;
   bool _syncing = false;
 
   StreamSubscription? _locationSub;
@@ -47,10 +48,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _refreshCounts() async {
     final count = await StorageService().count();
     final usageCount = await StorageService().countUsageSummaries();
+    final usageEventCount = await StorageService().countUsageEvents();
     if (mounted) {
       setState(() {
         _totalRecords = count;
         _usageSummaryCount = usageCount;
+        _usageEventCount = usageEventCount;
       });
     }
   }
@@ -60,10 +63,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final running = await BackgroundServiceManager.isRunning();
     final count = await StorageService().count();
     final usageCount = await StorageService().countUsageSummaries();
+    final usageEventCount = await StorageService().countUsageEvents();
     setState(() {
       _serviceRunning = running;
       _totalRecords = count;
       _usageSummaryCount = usageCount;
+      _usageEventCount = usageEventCount;
     });
     _subscribeToService();
   }
@@ -97,8 +102,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _usageSub = BackgroundServiceManager.usageStream.listen((data) async {
       if (data == null) return;
       final usageCount = await StorageService().countUsageSummaries();
+      final usageEventCount = await StorageService().countUsageEvents();
       if (mounted) {
-        setState(() => _usageSummaryCount = usageCount);
+        setState(() {
+          _usageSummaryCount = usageCount;
+          _usageEventCount = usageEventCount;
+        });
       }
     });
 
@@ -172,14 +181,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _syncing = true);
     final result = await SyncService().syncAllPending();
     final usageCount = await StorageService().countUsageSummaries();
-    if (mounted) setState(() { _syncing = false; _usageSummaryCount = usageCount; });
+    final usageEventCount = await StorageService().countUsageEvents();
+    if (mounted) setState(() {
+      _syncing = false;
+      _usageSummaryCount = usageCount;
+      _usageEventCount = usageEventCount;
+    });
 
-    if (result.locations == -1 || result.usageSummaries == -1) {
+    if (result.locations == -1 || result.usageSummaries == -1 || result.usageEvents == -1) {
       _showSnack('未配置服务器 URL，请在"设置"中填写');
     } else if (result.hasError) {
       _showSnack('同步失败：${result.error}');
     } else {
-      _showSnack('已同步定位 ${result.locations} 条，应用使用 ${result.usageSummaries} 条');
+      _showSnack('已同步定位 ${result.locations} 条，应用使用 ${result.usageSummaries} 条，事件 ${result.usageEvents} 条');
     }
   }
 
@@ -217,6 +231,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       locationServiceEnabled: _locationServiceEnabled,
                       hasUsagePermission: _hasUsagePermission,
                       usageSummaryCount: _usageSummaryCount,
+                      usageEventCount: _usageEventCount,
                       onOpenSettings: _openUsageAccessSettings,
                       onRefresh: _checkPermissions,
                     ),
@@ -291,6 +306,7 @@ class _PermissionCard extends StatelessWidget {
     required this.locationServiceEnabled,
     required this.hasUsagePermission,
     required this.usageSummaryCount,
+    required this.usageEventCount,
     required this.onOpenSettings,
     required this.onRefresh,
   });
@@ -299,6 +315,7 @@ class _PermissionCard extends StatelessWidget {
   final bool locationServiceEnabled;
   final bool hasUsagePermission;
   final int usageSummaryCount;
+  final int usageEventCount;
   final Future<void> Function() onOpenSettings;
   final VoidCallback onRefresh;
 
@@ -342,7 +359,7 @@ class _PermissionCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '本地已采集 $usageSummaryCount 条应用使用汇总记录',
+              '本地已采集 $usageSummaryCount 条应用使用汇总记录，$usageEventCount 条事件',
               style: const TextStyle(fontSize: 13, color: Colors.grey),
             ),
             const SizedBox(height: 8),
