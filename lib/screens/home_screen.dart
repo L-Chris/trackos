@@ -182,11 +182,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final result = await SyncService().syncAllPending();
     final usageCount = await StorageService().countUsageSummaries();
     final usageEventCount = await StorageService().countUsageEvents();
-    if (mounted) setState(() {
-      _syncing = false;
-      _usageSummaryCount = usageCount;
-      _usageEventCount = usageEventCount;
-    });
+    if (mounted) {
+      setState(() {
+        _syncing = false;
+        _usageSummaryCount = usageCount;
+        _usageEventCount = usageEventCount;
+      });
+    }
 
     if (result.locations == -1 || result.usageSummaries == -1 || result.usageEvents == -1) {
       _showSnack('未配置服务器 URL，请在"设置"中填写');

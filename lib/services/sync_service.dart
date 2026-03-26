@@ -232,7 +232,7 @@ class SyncService {
 
   Map<String, dynamic> _buildUsageSummaryPayload(AppUsageSummaryRecord record) {
     return {
-      'recordKey': '${kSyncDeviceId}:${record.recordKey}',
+      'recordKey': '$kSyncDeviceId:${record.recordKey}',
       'packageName': record.packageName,
       'appName': record.appName,
       'windowStartAt': DateTime.fromMillisecondsSinceEpoch(record.windowStartMs, isUtc: true).toIso8601String(),
@@ -254,7 +254,7 @@ class SyncService {
 
   Map<String, dynamic> _buildUsageEventPayload(UsageEventRecord record) {
     return {
-      'recordKey': '${kSyncDeviceId}:${record.recordKey}',
+      'recordKey': '$kSyncDeviceId:${record.recordKey}',
       'eventType': record.eventType,
       'packageName': record.packageName,
       'className': record.className,

@@ -29,7 +29,7 @@ class UsageService {
     required int endMs,
   }) async {
     if (!Platform.isAndroid) {
-      return const [];
+      return <AppUsageSummaryRecord>[];
     }
 
     final result = await _channel.invokeListMethod<dynamic>(
@@ -53,7 +53,7 @@ class UsageService {
     required int endMs,
   }) async {
     if (!Platform.isAndroid) {
-      return const [];
+      return <UsageEventRecord>[];
     }
 
     final result = await _channel.invokeListMethod<dynamic>(

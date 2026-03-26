@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'usage_service.dart';
 import 'storage_service.dart';
 import '../models/location_record.dart';
+import '../models/usage_event_record.dart';
 
 // Keys used for IPC events between service isolate and UI
 const String kEventLocation = 'location';
@@ -118,12 +119,12 @@ void onBackgroundServiceStart(ServiceInstance service) async {
       );
       final usageEventsEnabled = prefs.getBool(kPrefUsageEventsEnabledKey) ?? true;
       final lastEventCollectedAt = prefs.getInt(kPrefLastUsageEventCollectionKey) ?? lastCollectedAt;
-      final events = usageEventsEnabled
+      final List<UsageEventRecord> events = usageEventsEnabled
           ? await usageService.queryUsageEvents(
               startMs: lastEventCollectedAt,
               endMs: now,
             )
-          : const [];
+          : <UsageEventRecord>[];
       debugPrint('[TrackOS] Usage: ${summaries.length} records returned');
       debugPrint('[TrackOS] Usage events: ${events.length} records returned');
 

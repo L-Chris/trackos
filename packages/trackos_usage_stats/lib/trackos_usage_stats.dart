@@ -5,5 +5,4 @@
 /// via the auto-generated GeneratedPluginRegistrant.
 ///
 /// The Dart API is exposed through [UsageService] in the main app.
-library trackos_usage_stats;
 
