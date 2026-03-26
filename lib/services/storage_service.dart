@@ -21,7 +21,7 @@ class StorageService {
     final path = join(dbPath, 'trackos.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE locations (
@@ -45,6 +45,11 @@ class StorageService {
         if (oldVersion < 3) {
           await _createUsageEventsTable(db);
         }
+        if (oldVersion >= 2 && oldVersion < 4) {
+          await db.execute(
+            'ALTER TABLE usage_summaries ADD COLUMN cumulative_foreground_time_ms INTEGER',
+          );
+        }
       },
     );
   }
@@ -58,6 +63,7 @@ class StorageService {
         window_start_ms    INTEGER NOT NULL,
         window_end_ms      INTEGER NOT NULL,
         foreground_time_ms INTEGER NOT NULL,
+        cumulative_foreground_time_ms INTEGER,
         last_used_ms       INTEGER,
         synced             INTEGER NOT NULL DEFAULT 0
       )
@@ -145,11 +151,52 @@ class StorageService {
     if (records.isEmpty) return;
 
     final database = await db;
+    final normalizedRecords = await _normalizeUsageSummaries(records);
     final batch = database.batch();
-    for (final record in records) {
+    for (final record in normalizedRecords) {
       batch.insert('usage_summaries', record.toMap());
     }
     await batch.commit(noResult: true);
+  }
+
+  Future<List<AppUsageSummaryRecord>> _normalizeUsageSummaries(
+    List<AppUsageSummaryRecord> records,
+  ) async {
+    final sortedRecords = [...records]..sort((left, right) => left.windowEndMs.compareTo(right.windowEndMs));
+    final latestSnapshotByPackage = <String, AppUsageSummaryRecord?>{};
+    final normalizedRecords = <AppUsageSummaryRecord>[];
+
+    for (final record in sortedRecords) {
+      latestSnapshotByPackage[record.packageName] ??=
+          await latestUsageSummaryByPackage(record.packageName);
+      final previous = latestSnapshotByPackage[record.packageName];
+      final windowDurationMs = (record.windowEndMs - record.windowStartMs).clamp(0, 24 * 60 * 60 * 1000);
+      final rawCumulativeMs = record.cumulativeForegroundTimeMs ?? record.foregroundTimeMs;
+
+      var deltaMs = rawCumulativeMs;
+      if (previous?.cumulativeForegroundTimeMs != null &&
+          _isSameLocalDay(previous!.windowEndMs, record.windowEndMs) &&
+          rawCumulativeMs >= previous.cumulativeForegroundTimeMs!) {
+        deltaMs = rawCumulativeMs - previous.cumulativeForegroundTimeMs!;
+      }
+
+      deltaMs = deltaMs.clamp(0, windowDurationMs);
+
+      final normalized = record.copyWith(
+        foregroundTimeMs: deltaMs,
+        cumulativeForegroundTimeMs: rawCumulativeMs,
+      );
+      normalizedRecords.add(normalized);
+      latestSnapshotByPackage[record.packageName] = normalized;
+    }
+
+    return normalizedRecords;
+  }
+
+  bool _isSameLocalDay(int leftMs, int rightMs) {
+    final left = DateTime.fromMillisecondsSinceEpoch(leftMs);
+    final right = DateTime.fromMillisecondsSinceEpoch(rightMs);
+    return left.year == right.year && left.month == right.month && left.day == right.day;
   }
 
   Future<List<AppUsageSummaryRecord>> queryUnsyncedUsageSummaries({int limit = 100}) async {
@@ -184,6 +231,22 @@ class StorageService {
     final database = await db;
     final maps = await database.query(
       'usage_summaries',
+      orderBy: 'window_end_ms DESC',
+      limit: 1,
+    );
+    if (maps.isEmpty) {
+      return null;
+    }
+
+    return AppUsageSummaryRecord.fromMap(maps.first);
+  }
+
+  Future<AppUsageSummaryRecord?> latestUsageSummaryByPackage(String packageName) async {
+    final database = await db;
+    final maps = await database.query(
+      'usage_summaries',
+      where: 'package_name = ?',
+      whereArgs: [packageName],
       orderBy: 'window_end_ms DESC',
       limit: 1,
     );
