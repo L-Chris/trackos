@@ -127,11 +127,11 @@ class MoveRecognitionService {
   double? _computeConfidence(String moveType) {
     switch (moveType) {
       case 'IN_VEHICLE':
-        return ((_lastGpsSpeedMs - 4.17).clamp(0, 10) * 5 + 50).clamp(0, 100);
+        return ((_lastGpsSpeedMs - 4.17).clamp(0, 10) * 5 + 50).clamp(0, 100).toDouble();
       case 'RUNNING':
-        return ((_currentCadence - 160) / 40 * 50 + 50).clamp(0, 100);
+        return ((_currentCadence - 160) / 40 * 50 + 50).clamp(0, 100).toDouble();
       case 'WALKING':
-        return ((_currentCadence - 30) / 130 * 50 + 50).clamp(0, 100);
+        return ((_currentCadence - 30) / 130 * 50 + 50).clamp(0, 100).toDouble();
       case 'STILL':
         return 90;
       case 'ON_BICYCLE':
