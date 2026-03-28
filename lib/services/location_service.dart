@@ -48,4 +48,17 @@ class LocationService {
     final permission = await Geolocator.checkPermission();
     return permission == LocationPermission.always;
   }
+
+  /// 返回持续位置流（使用内置 LocationManager，无需 Google Play Services）
+  ///
+  /// [intervalMs] 控制 OS 推送更新的最小间隔，保持 GPS 锁定热备同时节省电量。
+  /// 调用方负责取消订阅。
+  Stream<Position> getPositionStream({int intervalMs = 5000}) {
+    final settings = AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      forceLocationManager: true,
+      intervalDuration: Duration(milliseconds: intervalMs),
+    );
+    return Geolocator.getPositionStream(locationSettings: settings);
+  }
 }
