@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_usage_summary_record.dart';
 import '../models/location_record.dart';
+import '../models/move_event_record.dart';
 import '../models/usage_event_record.dart';
 import 'storage_service.dart';
 
@@ -13,6 +14,7 @@ class SyncCounts {
   final int locations;
   final int usageSummaries;
   final int usageEvents;
+  final int moveEvents;
   /// Non-null when a network / server error occurred during sync.
   final String? error;
 
@@ -20,6 +22,7 @@ class SyncCounts {
     required this.locations,
     required this.usageSummaries,
     required this.usageEvents,
+    required this.moveEvents,
     this.error,
   });
 
@@ -149,10 +152,40 @@ class SyncService {
     return 0;
   }
 
+  Future<int> syncPendingMoveEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    if (serverUrl.isEmpty) return -1;
+
+    final records = await _storage.queryUnsyncedMoveEvents(limit: 200);
+    if (records.isEmpty) return 0;
+
+    final response = await _dio.post(
+      '$serverUrl/api/move-events/report/batch',
+      data: _buildMoveEventBatchPayload(records),
+    );
+
+    if (response.statusCode != null &&
+        response.statusCode! >= 200 &&
+        response.statusCode! < 300) {
+      final acceptedCount = _extractAcceptedCount(response.data, records.length);
+      final syncedIds = records
+          .take(acceptedCount)
+          .map((record) => record.id)
+          .whereType<int>()
+          .toList();
+
+      await _storage.markMoveEventsSynced(syncedIds);
+      return syncedIds.length;
+    }
+    return 0;
+  }
+
   Future<SyncCounts> syncAllPending() async {
     int locations = 0;
     int usageSummaries = 0;
     int usageEvents = 0;
+    int moveEvents = 0;
     String? error;
 
     try {
@@ -179,10 +212,19 @@ class SyncService {
       error ??= e.toString();
     }
 
+    try {
+      moveEvents = await syncPendingMoveEvents();
+    } on DioException catch (e) {
+      error ??= _formatDioError(e);
+    } catch (e) {
+      error ??= e.toString();
+    }
+
     return SyncCounts(
       locations: locations,
       usageSummaries: usageSummaries,
       usageEvents: usageEvents,
+      moveEvents: moveEvents,
       error: error,
     );
   }
@@ -261,6 +303,23 @@ class SyncService {
       'occurredAt': DateTime.fromMillisecondsSinceEpoch(record.occurredAtMs, isUtc: true).toIso8601String(),
       'source': record.source,
       'metadata': record.metadata,
+    };
+  }
+
+  Map<String, dynamic> _buildMoveEventBatchPayload(List<MoveEventRecord> records) {
+    return {
+      'userId': kSyncUserId,
+      'deviceId': kSyncDeviceId,
+      'records': records.map(_buildMoveEventPayload).toList(),
+    };
+  }
+
+  Map<String, dynamic> _buildMoveEventPayload(MoveEventRecord record) {
+    return {
+      'recordKey': '$kSyncDeviceId:${record.recordKey}',
+      'moveType': record.moveType,
+      'confidence': record.confidence,
+      'occurredAt': DateTime.fromMillisecondsSinceEpoch(record.occurredAtMs, isUtc: true).toIso8601String(),
     };
   }
 

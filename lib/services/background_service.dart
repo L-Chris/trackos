@@ -4,6 +4,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'move_recognition_service.dart';
 import 'usage_service.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
@@ -62,6 +63,8 @@ void onBackgroundServiceStart(ServiceInstance service) async {
 
   final storage = StorageService();
   final usageService = UsageService();
+  final moveService = MoveRecognitionService();
+  moveService.start();
 
   if (service is AndroidServiceInstance) {
     await service.setForegroundNotificationInfo(
@@ -72,9 +75,18 @@ void onBackgroundServiceStart(ServiceInstance service) async {
 
   StreamSubscription<Position>? _locationStreamSub;
 
+  // Subscribe to move events and persist state transitions
+  moveService.moveStream.listen((record) async {
+    await storage.insertMoveEvents([record]);
+    debugPrint('[TrackOS] MoveEvent: ${record.moveType} (confidence=${record.confidence?.toStringAsFixed(0)})');
+  }, onError: (Object e) {
+    debugPrint('[TrackOS] MoveEvent stream error: $e');
+  });
+
   // Listen for stop command from UI
   service.on(kActionStop).listen((_) async {
     _locationStreamSub?.cancel();
+    moveService.stop();
     service.invoke(kEventStatus, {'running': false});
     await service.stopSelf();
   });
@@ -167,12 +179,13 @@ void onBackgroundServiceStart(ServiceInstance service) async {
       final result = await SyncService().syncAllPending();
       if (result.hasError) {
         debugPrint('[TrackOS] Auto sync failed: ${result.error}');
-      } else if (result.locations > 0 || result.usageSummaries > 0 || result.usageEvents > 0) {
+      } else if (result.locations > 0 || result.usageSummaries > 0 || result.usageEvents > 0 || result.moveEvents > 0) {
         debugPrint(
           '[TrackOS] Auto sync uploaded '
           'locations=${result.locations}, '
           'usageSummaries=${result.usageSummaries}, '
-          'usageEvents=${result.usageEvents}',
+          'usageEvents=${result.usageEvents}, '
+          'moveEvents=${result.moveEvents}',
         );
       }
     } catch (e, st) {
@@ -202,6 +215,8 @@ void onBackgroundServiceStart(ServiceInstance service) async {
         return;
       }
       lastSavedTimestampMs = nowMs;
+
+      moveService.updateGpsSpeed(position.speed);
 
       final record = LocationRecord(
         lat: position.latitude,

@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/app_usage_summary_record.dart';
 import '../models/location_record.dart';
+import '../models/move_event_record.dart';
 import '../models/usage_event_record.dart';
 
 class StorageService {
@@ -21,7 +22,7 @@ class StorageService {
     final path = join(dbPath, 'trackos.db');
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE locations (
@@ -37,6 +38,7 @@ class StorageService {
         ''');
         await _createUsageSummariesTable(db);
         await _createUsageEventsTable(db);
+        await _createMoveEventsTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -49,6 +51,9 @@ class StorageService {
           await db.execute(
             'ALTER TABLE usage_summaries ADD COLUMN cumulative_foreground_time_ms INTEGER',
           );
+        }
+        if (oldVersion < 5) {
+          await _createMoveEventsTable(db);
         }
       },
     );
@@ -73,6 +78,28 @@ class StorageService {
     );
     await db.execute(
       'CREATE INDEX idx_usage_summaries_package_window ON usage_summaries(package_name, window_end_ms)',
+    );
+  }
+
+  Future<void> _createMoveEventsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE move_events (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_key     TEXT    NOT NULL,
+        move_type      TEXT    NOT NULL,
+        confidence     REAL,
+        occurred_at_ms INTEGER NOT NULL,
+        synced         INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE UNIQUE INDEX idx_move_events_record_key ON move_events(record_key)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_move_events_sync_time ON move_events(synced, occurred_at_ms)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_move_events_type_time ON move_events(move_type, occurred_at_ms)',
     );
   }
 
@@ -314,10 +341,54 @@ class StorageService {
     return UsageEventRecord.fromMap(maps.first);
   }
 
+  Future<void> insertMoveEvents(List<MoveEventRecord> records) async {
+    if (records.isEmpty) return;
+
+    final database = await db;
+    final batch = database.batch();
+    for (final record in records) {
+      batch.insert(
+        'move_events',
+        record.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<MoveEventRecord>> queryUnsyncedMoveEvents({int limit = 200}) async {
+    final database = await db;
+    final maps = await database.query(
+      'move_events',
+      where: 'synced = 0',
+      orderBy: 'occurred_at_ms ASC',
+      limit: limit,
+    );
+    return maps.map(MoveEventRecord.fromMap).toList();
+  }
+
+  Future<void> markMoveEventsSynced(List<int> ids) async {
+    if (ids.isEmpty) return;
+
+    final database = await db;
+    final placeholders = List.filled(ids.length, '?').join(', ');
+    await database.rawUpdate(
+      'UPDATE move_events SET synced = 1 WHERE id IN ($placeholders)',
+      ids,
+    );
+  }
+
+  Future<int> countMoveEvents() async {
+    final database = await db;
+    final result = await database.rawQuery('SELECT COUNT(*) as c FROM move_events');
+    return (result.first['c'] as int?) ?? 0;
+  }
+
   Future<void> clearAll() async {
     final database = await db;
     await database.delete('locations');
     await database.delete('usage_summaries');
     await database.delete('usage_events');
+    await database.delete('move_events');
   }
 }
