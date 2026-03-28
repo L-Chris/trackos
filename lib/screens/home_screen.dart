@@ -20,10 +20,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _hasPermission = false;
   bool _hasBackgroundPermission = false;
   bool _hasUsagePermission = false;
+  bool _hasActivityPermission = false;
   bool _locationServiceEnabled = true;
   int _totalRecords = 0;
   int _usageSummaryCount = 0;
   int _usageEventCount = 0;
+  int _moveEventCount = 0;
   bool _syncing = false;
 
   StreamSubscription? _locationSub;
@@ -54,11 +56,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final count = await StorageService().count();
     final usageCount = await StorageService().countUsageSummaries();
     final usageEventCount = await StorageService().countUsageEvents();
+    final moveEventCount = await StorageService().countMoveEvents();
     if (mounted) {
       setState(() {
         _totalRecords = count;
         _usageSummaryCount = usageCount;
         _usageEventCount = usageEventCount;
+        _moveEventCount = moveEventCount;
       });
     }
   }
@@ -69,11 +73,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final count = await StorageService().count();
     final usageCount = await StorageService().countUsageSummaries();
     final usageEventCount = await StorageService().countUsageEvents();
+    final moveEventCount = await StorageService().countMoveEvents();
     setState(() {
       _serviceRunning = running;
       _totalRecords = count;
       _usageSummaryCount = usageCount;
       _usageEventCount = usageEventCount;
+      _moveEventCount = moveEventCount;
     });
     await _ensureTrackingStarted();
     _subscribeToService();
@@ -85,11 +91,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final hasBg = await locationService.hasBackgroundPermission();
     final serviceOn = await locationService.isLocationServiceEnabled();
     final hasUsage = await UsageService().hasUsageStatsPermission();
+    final activityStatus = await Permission.activityRecognition.status;
+    if (activityStatus.isDenied) {
+      await Permission.activityRecognition.request();
+    }
+    final hasActivity = await Permission.activityRecognition.isGranted;
     setState(() {
       _hasPermission = hasPerm;
       _hasBackgroundPermission = hasBg;
       _locationServiceEnabled = serviceOn;
       _hasUsagePermission = hasUsage;
+      _hasActivityPermission = hasActivity;
     });
   }
 
@@ -210,11 +222,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final result = await SyncService().syncAllPending();
     final usageCount = await StorageService().countUsageSummaries();
     final usageEventCount = await StorageService().countUsageEvents();
+    final moveEventCount = await StorageService().countMoveEvents();
     if (mounted) {
       setState(() {
         _syncing = false;
         _usageSummaryCount = usageCount;
         _usageEventCount = usageEventCount;
+        _moveEventCount = moveEventCount;
       });
     }
 
@@ -223,7 +237,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } else if (result.hasError) {
       _showSnack('同步失败：${result.error}');
     } else {
-      _showSnack('已同步定位 ${result.locations} 条，应用使用 ${result.usageSummaries} 条，事件 ${result.usageEvents} 条');
+      _showSnack(
+        '已同步定位 ${result.locations} 条，'
+        '应用使用 ${result.usageSummaries} 条，'
+        '事件 ${result.usageEvents} 条，'
+        '活动 ${result.moveEvents} 条',
+      );
     }
   }
 
@@ -258,8 +277,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       hasBackground: _hasBackgroundPermission,
                       locationServiceEnabled: _locationServiceEnabled,
                       hasUsagePermission: _hasUsagePermission,
+                      hasActivityPermission: _hasActivityPermission,
                       usageSummaryCount: _usageSummaryCount,
                       usageEventCount: _usageEventCount,
+                      moveEventCount: _moveEventCount,
                       onOpenSettings: _openUsageAccessSettings,
                       onRefresh: _resumeRefresh,
                       onOpenLocationSettings: _showBackgroundPermissionDialog,
@@ -269,6 +290,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       totalRecords: _totalRecords,
                       usageSummaryCount: _usageSummaryCount,
                       usageEventCount: _usageEventCount,
+                      moveEventCount: _moveEventCount,
                     ),
                   ],
                 ),
@@ -309,8 +331,10 @@ class _PermissionCard extends StatelessWidget {
     required this.hasBackground,
     required this.locationServiceEnabled,
     required this.hasUsagePermission,
+    required this.hasActivityPermission,
     required this.usageSummaryCount,
     required this.usageEventCount,
+    required this.moveEventCount,
     required this.onOpenSettings,
     required this.onRefresh,
     required this.onOpenLocationSettings,
@@ -319,8 +343,10 @@ class _PermissionCard extends StatelessWidget {
   final bool hasBackground;
   final bool locationServiceEnabled;
   final bool hasUsagePermission;
+  final bool hasActivityPermission;
   final int usageSummaryCount;
   final int usageEventCount;
+  final int moveEventCount;
   final Future<void> Function() onOpenSettings;
   final Future<void> Function() onRefresh;
   final VoidCallback onOpenLocationSettings;
@@ -393,6 +419,16 @@ class _PermissionCard extends StatelessWidget {
                 label: const Text('打开使用情况访问设置'),
               ),
             ),
+            const Divider(height: 16),
+            _PermissionRow(
+              label: '活动识别权限（步频/运动检测）',
+              granted: hasActivityPermission,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '本地已采集 $moveEventCount 条活动状态记录',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
           ],
         ),
       ),
@@ -429,11 +465,13 @@ class _CollectionOverviewCard extends StatelessWidget {
     required this.totalRecords,
     required this.usageSummaryCount,
     required this.usageEventCount,
+    required this.moveEventCount,
   });
 
   final int totalRecords;
   final int usageSummaryCount;
   final int usageEventCount;
+  final int moveEventCount;
 
   @override
   Widget build(BuildContext context) {
@@ -454,6 +492,7 @@ class _CollectionOverviewCard extends StatelessWidget {
             _InfoRow('定位记录', '$totalRecords 条'),
             _InfoRow('应用使用汇总', '$usageSummaryCount 条'),
             _InfoRow('设备/前台事件', '$usageEventCount 条'),
+            _InfoRow('活动状态', '$moveEventCount 条'),
           ],
         ),
       ),
