@@ -1,0 +1,19 @@
+name: trackos_payment_notifications
+description: Local plugin that listens for Alipay payment notifications via NotificationListenerService and exposes them via MethodChannel.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.0.0
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.rethinkos.trackos.paymentnotifications
+        pluginClass: PaymentNotificationsPlugin

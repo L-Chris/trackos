@@ -46,6 +46,16 @@
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="location" />
+        <!-- Payment notification listener service -->
+        <service
+            android:name="com.rethinkos.trackos.paymentnotifications.PaymentNotificationListenerService"
+            android:label="TrackOS 支付通知监听"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

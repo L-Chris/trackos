@@ -36,6 +36,10 @@ dependencies:
   trackos_usage_stats:
     path: packages/trackos_usage_stats
 
+  # Local plugin — listens for Alipay payment notifications via NotificationListenerService.
+  trackos_payment_notifications:
+    path: packages/trackos_payment_notifications
+
   cupertino_icons: ^1.0.8
   geolocator: ^13.0.0
   flutter_background_service: ^5.0.0
