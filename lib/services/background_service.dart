@@ -179,13 +179,14 @@ void onBackgroundServiceStart(ServiceInstance service) async {
       final result = await SyncService().syncAllPending();
       if (result.hasError) {
         debugPrint('[TrackOS] Auto sync failed: ${result.error}');
-      } else if (result.locations > 0 || result.usageSummaries > 0 || result.usageEvents > 0 || result.moveEvents > 0) {
+      } else if (result.locations > 0 || result.usageSummaries > 0 || result.usageEvents > 0 || result.moveEvents > 0 || result.paymentNotifications > 0) {
         debugPrint(
           '[TrackOS] Auto sync uploaded '
           'locations=${result.locations}, '
           'usageSummaries=${result.usageSummaries}, '
           'usageEvents=${result.usageEvents}, '
-          'moveEvents=${result.moveEvents}',
+          'moveEvents=${result.moveEvents}, '
+          'paymentNotifications=${result.paymentNotifications}',
         );
       }
     } catch (e, st) {

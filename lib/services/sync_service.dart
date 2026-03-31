@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/app_usage_summary_record.dart';
 import '../models/location_record.dart';
 import '../models/move_event_record.dart';
@@ -17,6 +18,7 @@ class SyncCounts {
   final int usageSummaries;
   final int usageEvents;
   final int moveEvents;
+  final int paymentNotifications;
   /// Non-null when a network / server error occurred during sync.
   final String? error;
 
@@ -25,32 +27,14 @@ class SyncCounts {
     required this.usageSummaries,
     required this.usageEvents,
     required this.moveEvents,
+    required this.paymentNotifications,
     this.error,
   });
 
   bool get hasError => error != null;
 }
 
-/// Sync service: uploads unsynced location records to the configured server.
-///
-/// POST {serverUrl}/api/locations/report/batch
-/// Body: {
-///   "userId": "1",
-///   "deviceId": "android-device",
-///   "records": [
-///     {
-///       "latitude": 31.2304,
-///       "longitude": 121.4737,
-///       "recordedAt": "2026-03-25T02:50:00.000Z",
-///       "accuracy": 5,
-///       "speed": 1.2,
-///       "altitude": 12.5
-///     }
-///   ]
-/// }
-///
-/// Currently defaults to http://track-api.rethinkos.com if not configured.
-/// Override via SettingsScreen to use a different server.
+/// Sync service: uploads unsynced records to the configured server.
 class SyncService {
   static final SyncService _instance = SyncService._internal();
   factory SyncService() => _instance;
@@ -63,12 +47,18 @@ class SyncService {
   ));
 
   final _storage = StorageService();
+  final _paymentNotificationService = PaymentNotificationService();
 
-  /// Uploads all unsynced records. Returns the number of successfully synced records,
-  /// or -1 if skipped (no URL configured).
-  Future<int> syncPending() async {
+  Future<String> _resolveServerUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    return (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com')
+        .trim()
+        .replaceAll(RegExp(r'/+$'), '');
+  }
+
+  /// Uploads unsynced location records. Returns -1 if skipped (no URL configured).
+  Future<int> syncPending() async {
+    final serverUrl = await _resolveServerUrl();
     if (serverUrl.isEmpty) return -1;
 
     final records = await _storage.queryUnsynced(limit: 100);
@@ -79,9 +69,7 @@ class SyncService {
       data: _buildBatchPayload(records),
     );
 
-    if (response.statusCode != null &&
-        response.statusCode! >= 200 &&
-        response.statusCode! < 300) {
+    if (_isSuccess(response.statusCode)) {
       final acceptedCount = _extractAcceptedCount(response.data, records.length);
       final syncedIds = records
           .take(acceptedCount)
@@ -92,13 +80,11 @@ class SyncService {
       await _storage.markSynced(syncedIds);
       return syncedIds.length;
     }
-    // Non-2xx without an exception — treat as 0 synced.
     return 0;
   }
 
   Future<int> syncPendingUsageSummaries() async {
-    final prefs = await SharedPreferences.getInstance();
-    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    final serverUrl = await _resolveServerUrl();
     if (serverUrl.isEmpty) return -1;
 
     final records = await _storage.queryUnsyncedUsageSummaries(limit: 100);
@@ -109,9 +95,7 @@ class SyncService {
       data: _buildUsageSummaryBatchPayload(records),
     );
 
-    if (response.statusCode != null &&
-        response.statusCode! >= 200 &&
-        response.statusCode! < 300) {
+    if (_isSuccess(response.statusCode)) {
       final acceptedCount = _extractAcceptedCount(response.data, records.length);
       final syncedIds = records
           .take(acceptedCount)
@@ -126,8 +110,7 @@ class SyncService {
   }
 
   Future<int> syncPendingUsageEvents() async {
-    final prefs = await SharedPreferences.getInstance();
-    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    final serverUrl = await _resolveServerUrl();
     if (serverUrl.isEmpty) return -1;
 
     final records = await _storage.queryUnsyncedUsageEvents(limit: 200);
@@ -138,9 +121,7 @@ class SyncService {
       data: _buildUsageEventBatchPayload(records),
     );
 
-    if (response.statusCode != null &&
-        response.statusCode! >= 200 &&
-        response.statusCode! < 300) {
+    if (_isSuccess(response.statusCode)) {
       final acceptedCount = _extractAcceptedCount(response.data, records.length);
       final syncedIds = records
           .take(acceptedCount)
@@ -155,8 +136,7 @@ class SyncService {
   }
 
   Future<int> syncPendingMoveEvents() async {
-    final prefs = await SharedPreferences.getInstance();
-    final serverUrl = (prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com').trim().replaceAll(RegExp(r'/+$'), '');
+    final serverUrl = await _resolveServerUrl();
     if (serverUrl.isEmpty) return -1;
 
     final records = await _storage.queryUnsyncedMoveEvents(limit: 200);
@@ -167,9 +147,7 @@ class SyncService {
       data: _buildMoveEventBatchPayload(records),
     );
 
-    if (response.statusCode != null &&
-        response.statusCode! >= 200 &&
-        response.statusCode! < 300) {
+    if (_isSuccess(response.statusCode)) {
       final acceptedCount = _extractAcceptedCount(response.data, records.length);
       final syncedIds = records
           .take(acceptedCount)
@@ -183,11 +161,39 @@ class SyncService {
     return 0;
   }
 
+  Future<int> syncPendingPaymentNotifications() async {
+    final serverUrl = await _resolveServerUrl();
+    if (serverUrl.isEmpty) return -1;
+
+    final records = await _paymentNotificationService.queryUnsyncedPaymentNotifications(
+      limit: 200,
+    );
+    if (records.isEmpty) return 0;
+
+    final response = await _dio.post(
+      '$serverUrl/api/payment-notifications/report/batch',
+      data: _buildPaymentNotificationBatchPayload(records),
+    );
+
+    if (_isSuccess(response.statusCode)) {
+      final acceptedCount = _extractAcceptedCount(response.data, records.length);
+      final syncedRecordKeys = records
+          .take(acceptedCount)
+          .map((record) => record.recordKey)
+          .toList();
+
+      await _paymentNotificationService.markPaymentNotificationsSynced(syncedRecordKeys);
+      return syncedRecordKeys.length;
+    }
+    return 0;
+  }
+
   Future<SyncCounts> syncAllPending() async {
     int locations = 0;
     int usageSummaries = 0;
     int usageEvents = 0;
     int moveEvents = 0;
+    int paymentNotifications = 0;
     String? error;
 
     try {
@@ -222,14 +228,26 @@ class SyncService {
       error ??= e.toString();
     }
 
+    try {
+      paymentNotifications = await syncPendingPaymentNotifications();
+    } on DioException catch (e) {
+      error ??= _formatDioError(e);
+    } catch (e) {
+      error ??= e.toString();
+    }
+
     return SyncCounts(
       locations: locations,
       usageSummaries: usageSummaries,
       usageEvents: usageEvents,
       moveEvents: moveEvents,
+      paymentNotifications: paymentNotifications,
       error: error,
     );
   }
+
+  bool _isSuccess(int? statusCode) =>
+      statusCode != null && statusCode >= 200 && statusCode < 300;
 
   String _formatDioError(DioException e) {
     switch (e.type) {
@@ -259,7 +277,8 @@ class SyncService {
     return {
       'latitude': record.lat,
       'longitude': record.lng,
-      'recordedAt': DateTime.fromMillisecondsSinceEpoch(record.timestamp, isUtc: true).toIso8601String(),
+      'recordedAt': DateTime.fromMillisecondsSinceEpoch(record.timestamp, isUtc: true)
+          .toIso8601String(),
       'accuracy': record.accuracy,
       'speed': record.speed,
       'altitude': record.altitude,
@@ -279,12 +298,15 @@ class SyncService {
       'recordKey': '$kSyncDeviceId:${record.recordKey}',
       'packageName': record.packageName,
       'appName': record.appName,
-      'windowStartAt': DateTime.fromMillisecondsSinceEpoch(record.windowStartMs, isUtc: true).toIso8601String(),
-      'windowEndAt': DateTime.fromMillisecondsSinceEpoch(record.windowEndMs, isUtc: true).toIso8601String(),
+      'windowStartAt': DateTime.fromMillisecondsSinceEpoch(record.windowStartMs, isUtc: true)
+          .toIso8601String(),
+      'windowEndAt': DateTime.fromMillisecondsSinceEpoch(record.windowEndMs, isUtc: true)
+          .toIso8601String(),
       'foregroundTimeMs': record.foregroundTimeMs,
       'lastUsedAt': record.lastUsedMs == null
           ? null
-          : DateTime.fromMillisecondsSinceEpoch(record.lastUsedMs!, isUtc: true).toIso8601String(),
+          : DateTime.fromMillisecondsSinceEpoch(record.lastUsedMs!, isUtc: true)
+              .toIso8601String(),
     };
   }
 
@@ -302,7 +324,8 @@ class SyncService {
       'eventType': record.eventType,
       'packageName': record.packageName,
       'className': record.className,
-      'occurredAt': DateTime.fromMillisecondsSinceEpoch(record.occurredAtMs, isUtc: true).toIso8601String(),
+      'occurredAt': DateTime.fromMillisecondsSinceEpoch(record.occurredAtMs, isUtc: true)
+          .toIso8601String(),
       'source': record.source,
       'metadata': record.metadata,
     };
@@ -321,7 +344,37 @@ class SyncService {
       'recordKey': '$kSyncDeviceId:${record.recordKey}',
       'moveType': record.moveType,
       'confidence': record.confidence,
-      'occurredAt': DateTime.fromMillisecondsSinceEpoch(record.occurredAtMs, isUtc: true).toIso8601String(),
+      'occurredAt': DateTime.fromMillisecondsSinceEpoch(record.occurredAtMs, isUtc: true)
+          .toIso8601String(),
+    };
+  }
+
+  Map<String, dynamic> _buildPaymentNotificationBatchPayload(
+    List<PaymentNotificationRecord> records,
+  ) {
+    return {
+      'userId': kSyncUserId,
+      'deviceId': kSyncDeviceId,
+      'records': records.map(_buildPaymentNotificationPayload).toList(),
+    };
+  }
+
+  Map<String, dynamic> _buildPaymentNotificationPayload(
+    PaymentNotificationRecord record,
+  ) {
+    return {
+      'recordKey': record.recordKey,
+      'packageName': record.packageName,
+      'notificationKey': record.notificationKey,
+      'postedAt': DateTime.fromMillisecondsSinceEpoch(record.postedAtMs, isUtc: true)
+          .toIso8601String(),
+      'receivedAt': DateTime.fromMillisecondsSinceEpoch(record.receivedAtMs, isUtc: true)
+          .toIso8601String(),
+      'title': record.title,
+      'text': record.text,
+      'bigText': record.bigText,
+      'tickerText': record.tickerText,
+      'sourceMetadata': record.sourceMetadata,
     };
   }
 

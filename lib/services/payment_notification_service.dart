@@ -23,6 +23,11 @@ class PaymentNotificationService {
     return (await _channel.invokeMethod<int>('countPendingPaymentNotifications')) ?? 0;
   }
 
+  Future<int> countAllPaymentNotifications() async {
+    if (!Platform.isAndroid) return 0;
+    return (await _channel.invokeMethod<int>('countAllPaymentNotifications')) ?? 0;
+  }
+
   Future<List<PaymentNotificationRecord>> queryUnsyncedPaymentNotifications({
     int limit = 200,
   }) async {
