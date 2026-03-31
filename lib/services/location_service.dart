@@ -43,6 +43,11 @@ class LocationService {
     return Geolocator.isLocationServiceEnabled();
   }
 
+  /// Open the system location settings page (GPS / master location switch).
+  Future<bool> openLocationSettings() async {
+    return Geolocator.openLocationSettings();
+  }
+
   /// Check whether background location permission is granted (Android 10+).
   Future<bool> hasBackgroundPermission() async {
     final permission = await Geolocator.checkPermission();

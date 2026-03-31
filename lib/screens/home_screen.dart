@@ -154,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final canStart =
         _hasPermission && _hasBackgroundPermission && _locationServiceEnabled;
     if (!canStart) {
-      _showBackgroundPermissionDialog();
+      _showLocationRequirementDialog();
       return;
     }
 
@@ -208,14 +208,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  void _showBackgroundPermissionDialog() {
+  Future<void> _showLocationRequirementDialog() async {
+    if (!_locationServiceEnabled) {
+      await _showLocationServiceDialog();
+      return;
+    }
+    _showLocationPermissionDialog();
+  }
+
+  void _showLocationPermissionDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('需要后台位置权限'),
-        content: const Text(
-          '后台持续追踪需要"始终允许"位置权限。\n\n'
-          '请在系统设置 → 应用 → TrackOS → 权限 → 位置 → 选择"始终允许"。',
+        title: const Text('需要位置权限'),
+        content: Text(
+          _hasPermission
+              ? '后台持续追踪需要"始终允许"位置权限。\n\n'
+                  '请在系统设置 → 应用 → TrackOS → 权限 → 位置 → 选择"始终允许"。'
+              : '请先授予 TrackOS 位置权限。\n\n'
+                  '请在系统设置 → 应用 → TrackOS → 权限 → 位置，允许位置访问。',
         ),
         actions: [
           TextButton(
@@ -228,6 +239,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               await openAppSettings();
             },
             child: const Text('去设置'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showLocationServiceDialog() async {
+    final locationService = LocationService();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('需要开启系统位置服务'),
+        content: const Text(
+          '当前系统位置服务（GPS/定位总开关）未开启。\n\n'
+          '即使应用的位置权限已经是“始终允许”，只要系统定位总开关关闭，后台定位仍然无法工作。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await locationService.openLocationSettings();
+            },
+            child: const Text('去开启'),
           ),
         ],
       ),
@@ -308,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       onOpenNotificationSettings:
                           _openNotificationAccessSettings,
                       onRefresh: _resumeRefresh,
-                      onOpenLocationSettings: _showBackgroundPermissionDialog,
+                      onOpenLocationSettings: _showLocationRequirementDialog,
                     ),
                     const SizedBox(height: 16),
                     _CollectionOverviewCard(
@@ -388,7 +426,7 @@ class _PermissionCard extends StatelessWidget {
   final Future<void> Function() onOpenUsageSettings;
   final Future<void> Function() onOpenNotificationSettings;
   final Future<void> Function() onRefresh;
-  final VoidCallback onOpenLocationSettings;
+  final Future<void> Function() onOpenLocationSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -433,9 +471,11 @@ class _PermissionCard extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: FilledButton.tonalIcon(
-                  onPressed: onOpenLocationSettings,
+                  onPressed: () => onOpenLocationSettings(),
                   icon: const Icon(Icons.my_location),
-                  label: const Text('去完善位置权限'),
+                  label: Text(
+                    locationServiceEnabled ? '去完善位置权限' : '去开启系统位置服务',
+                  ),
                 ),
               ),
             ],
