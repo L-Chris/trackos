@@ -10,6 +10,7 @@ import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../services/usage_service.dart';
 
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -40,18 +41,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription? _locationSub;
   StreamSubscription? _statusSub;
   StreamSubscription? _usageSub;
+  StreamSubscription<ServiceStatus>? _locationServiceSubscription; // 新增：服务状态订阅
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _init();
+    
+    // 订阅位置服务状态变化
+    final locationService = LocationService();
+    _locationServiceSubscription = locationService.serviceStatusStream.listen((status) {
+      if (mounted) {
+        setState(() {
+          _locationServiceEnabled = status == ServiceStatus.enabled;
+        });
+      }
+    });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _resumeRefresh();
+      // 重新检查服务状态
+      final locationService = LocationService();
+      locationService.isLocationServiceEnabled().then((enabled) {
+        if (mounted) {
+          setState(() {
+            _locationServiceEnabled = enabled;
+          });
+        }
+      });
     }
   }
 
@@ -205,6 +226,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _locationSub?.cancel();
     _statusSub?.cancel();
     _usageSub?.cancel();
+    _locationServiceSubscription?.cancel(); // 取消服务状态监听
     super.dispose();
   }
 
@@ -466,7 +488,8 @@ class _PermissionCard extends StatelessWidget {
               label: '位置权限（始终允许，后台必须）',
               granted: hasBackground,
             ),
-            if (!hasPermission || !hasBackground || !locationServiceEnabled) ...[
+            if (!hasPermission || !hasBackground || !locationServiceEnabled) ...
+                [
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
@@ -474,7 +497,9 @@ class _PermissionCard extends StatelessWidget {
                   onPressed: () => onOpenLocationSettings(),
                   icon: const Icon(Icons.my_location),
                   label: Text(
-                    locationServiceEnabled ? '去完善位置权限' : '去开启系统位置服务',
+                    locationServiceEnabled
+                        ? '去完善位置权限'
+                        : '去开启系统位置服务',
                   ),
                 ),
               ),
