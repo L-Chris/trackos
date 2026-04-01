@@ -1,0 +1,1 @@
+# TrackOS 项目计划\n\n## 任务目标\n修复App经常提示系统位置服务（GPS开关）未开启的问题。\n\n## 当前进展\n1. 分析代码结构，确认bug原因\n   - 已找到问题：iOS Info.plist缺少位置权限描述\n2. 已完成的修复\n   - 在iOS Info.plist中添加了NSLocationWhenInUseUsageDescription和NSLocationAlwaysAndWhenInUseUsageDescription\n   - 提交PR到原始仓库\n\n## 未完成工作\n- 等待PR审核和合并\n- 测试修复后的版本\n\n## 下一步\n- 如果PR被合并，更新文档和发布说明\n- 如果PR被拒绝，根据反馈调整代码\n
