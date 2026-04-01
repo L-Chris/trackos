@@ -4,9 +4,11 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'move_recognition_service.dart';
 import 'usage_service.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
+import 'location_service.dart';
 import '../models/location_record.dart';
 import '../models/usage_event_record.dart';
 
@@ -61,6 +63,8 @@ void onBackgroundServiceStart(ServiceInstance service) async {
 
   final storage = StorageService();
   final usageService = UsageService();
+  final moveService = MoveRecognitionService();
+  moveService.start();
 
   if (service is AndroidServiceInstance) {
     await service.setForegroundNotificationInfo(
@@ -69,8 +73,20 @@ void onBackgroundServiceStart(ServiceInstance service) async {
     );
   }
 
+  StreamSubscription<Position>? _locationStreamSub;
+
+  // Subscribe to move events and persist state transitions
+  moveService.moveStream.listen((record) async {
+    await storage.insertMoveEvents([record]);
+    debugPrint('[TrackOS] MoveEvent: ${record.moveType} (confidence=${record.confidence?.toStringAsFixed(0)})');
+  }, onError: (Object e) {
+    debugPrint('[TrackOS] MoveEvent stream error: $e');
+  });
+
   // Listen for stop command from UI
   service.on(kActionStop).listen((_) async {
+    _locationStreamSub?.cancel();
+    moveService.stop();
     service.invoke(kEventStatus, {'running': false});
     await service.stopSelf();
   });
@@ -80,12 +96,6 @@ void onBackgroundServiceStart(ServiceInstance service) async {
   int intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30;
   int usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 300;
   int autoSyncIntervalSeconds = prefs.getInt(kPrefAutoSyncIntervalKey) ?? 600;
-
-  // Android: force built-in LocationManager (no Google Play Services needed)
-  final locationSettings = AndroidSettings(
-    accuracy: LocationAccuracy.high,
-    forceLocationManager: true,
-  );
 
   // Broadcast initial status
   service.invoke(kEventStatus, {'running': true});
@@ -169,12 +179,14 @@ void onBackgroundServiceStart(ServiceInstance service) async {
       final result = await SyncService().syncAllPending();
       if (result.hasError) {
         debugPrint('[TrackOS] Auto sync failed: ${result.error}');
-      } else if (result.locations > 0 || result.usageSummaries > 0 || result.usageEvents > 0) {
+      } else if (result.locations > 0 || result.usageSummaries > 0 || result.usageEvents > 0 || result.moveEvents > 0 || result.paymentNotifications > 0) {
         debugPrint(
           '[TrackOS] Auto sync uploaded '
           'locations=${result.locations}, '
           'usageSummaries=${result.usageSummaries}, '
-          'usageEvents=${result.usageEvents}',
+          'usageEvents=${result.usageEvents}, '
+          'moveEvents=${result.moveEvents}, '
+          'paymentNotifications=${result.paymentNotifications}',
         );
       }
     } catch (e, st) {
@@ -188,11 +200,24 @@ void onBackgroundServiceStart(ServiceInstance service) async {
 
   // ── Location tracking ─────────────────────────────────────────────────────
 
-  Timer.periodic(Duration(seconds: intervalSeconds), (_) async {
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: locationSettings,
-      ).timeout(const Duration(seconds: 15));
+  final locationService = LocationService();
+  int? lastSavedTimestampMs;
+
+  _locationStreamSub = locationService
+      .getPositionStream(intervalMs: 5000)
+      .listen(
+    (position) async {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final thresholdMs = intervalSeconds * 1000;
+
+      // 门控：未到配置的录制间隔则跳过
+      if (lastSavedTimestampMs != null &&
+          nowMs - lastSavedTimestampMs! < thresholdMs) {
+        return;
+      }
+      lastSavedTimestampMs = nowMs;
+
+      moveService.updateGpsSpeed(position.speed);
 
       final record = LocationRecord(
         lat: position.latitude,
@@ -214,10 +239,11 @@ void onBackgroundServiceStart(ServiceInstance service) async {
         'speed': record.speed,
         'timestamp': record.timestamp,
       });
-    } catch (e) {
-      debugPrint('[TrackOS] Location error: $e');
-    }
-  });
+    },
+    onError: (Object e) {
+      debugPrint('[TrackOS] Location stream error: $e');
+    },
+  );
 }
 
 class BackgroundServiceManager {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../services/background_service.dart';
 import '../services/sync_service.dart';
 
@@ -38,7 +39,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 300;
       _autoSyncIntervalSeconds = prefs.getInt(kPrefAutoSyncIntervalKey) ?? 600;
       _usageEventsEnabled = prefs.getBool(kPrefUsageEventsEnabledKey) ?? true;
-      _serverUrlController.text = prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com';
+      _serverUrlController.text =
+          prefs.getString(kPrefServerUrl) ?? 'https://track-api.rethinkos.com';
     });
   }
 
@@ -81,7 +83,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // --- Tracking Interval ---
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -201,7 +202,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // --- Server URL ---
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -232,7 +232,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             const Text(
                               '会向 {url}/api/locations/report/batch 发送批量 POST 请求，\n'
                               '应用使用汇总会额外发送到 {url}/api/app-usage-summaries/report/batch，\n'
-                              '事件流会发送到 {url}/api/usage-events/report/batch。',
+                              '事件流会发送到 {url}/api/usage-events/report/batch，\n'
+                              '活动状态会发送到 {url}/api/move-events/report/batch，\n'
+                              '支付宝支付通知会发送到 {url}/api/payment-notifications/report/batch。',
                               style: TextStyle(fontSize: 11, color: Colors.grey),
                             ),
                           ],
@@ -245,12 +247,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _saving ? null : _save,
+              onPressed: _saving ? null : () => _save(),
               icon: _saving
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Icon(Icons.save),
               label: const Text('保存设置'),
