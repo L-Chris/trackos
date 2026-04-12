@@ -384,7 +384,17 @@ class StorageService {
     return (result.first['c'] as int?) ?? 0;
   }
 
-  Future<void> clearAll() async {
+  
+  // 删除已同步的记录
+  Future<void> deleteSyncedRecords() async {
+    final database = await db;
+    await database.delete('locations', where: 'synced = 1');
+    await database.delete('usage_summaries', where: 'synced = 1');
+    await database.delete('usage_events', where: 'synced = 1');
+    await database.delete('move_events', where: 'synced = 1');
+  }
+
+Future<void> clearAll() async {
     final database = await db;
     await database.delete('locations');
     await database.delete('usage_summaries');

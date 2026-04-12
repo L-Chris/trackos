@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'widgets/floating_screenshot_widget.dart';
 import 'services/background_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
@@ -6,7 +7,13 @@ import 'screens/settings_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initBackgroundService();
-  runApp(const TrackOsApp());
+  runApp(const TrackOsApp());    // 初始化浮窗截图功能
+    runApp(const TrackOsApp());
+    // 启动浮窗
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final floatingWidget = const FloatingScreenshotWidget();
+    });
+
 }
 
 class TrackOsApp extends StatelessWidget {
