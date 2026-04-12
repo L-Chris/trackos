@@ -1,0 +1,20 @@
+name: trackos_screenshot
+description: Local plugin that captures full-screen screenshots via Android MediaProjection API.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.0.0
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.rethinkos.trackos.screenshot
+        pluginClass: ScreenshotPlugin
+

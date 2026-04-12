@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_floating_window/flutter_floating_window.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:trackos_screenshot/trackos_screenshot.dart';
 
 import '../services/background_service.dart';
 import '../services/location_service.dart';
 import '../services/payment_notification_service.dart';
+import '../services/screenshot_service.dart';
 import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../services/usage_service.dart';
@@ -30,18 +33,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _hasActivityPermission = false;
   bool _hasNotificationAccess = false;
   bool _locationServiceEnabled = true;
+  bool _hasOverlayPermission = false;
   int _totalRecords = 0;
   int _usageSummaryCount = 0;
   int _usageEventCount = 0;
   int _moveEventCount = 0;
   int _paymentNotificationCount = 0;
   int _pendingPaymentNotificationCount = 0;
+  int _screenshotCount = 0;
   bool _syncing = false;
 
   StreamSubscription? _locationSub;
   StreamSubscription? _statusSub;
   StreamSubscription? _usageSub;
-  StreamSubscription<ServiceStatus>? _locationServiceSubscription; // 新增：服务状态订阅
+  StreamSubscription? _locationServiceSubscription; // 服务状态订阅
 
   @override
   void initState() {
@@ -91,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await _paymentNotificationService.countAllPaymentNotifications();
     final pendingPaymentNotificationCount =
         await _paymentNotificationService.countPendingPaymentNotifications();
+    final screenshotCount = await ScreenshotService.count();
     if (mounted) {
       setState(() {
         _totalRecords = count;
@@ -99,6 +105,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _moveEventCount = moveEventCount;
         _paymentNotificationCount = paymentNotificationCount;
         _pendingPaymentNotificationCount = pendingPaymentNotificationCount;
+        _screenshotCount = screenshotCount;
       });
     }
   }
@@ -129,6 +136,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await Permission.activityRecognition.request();
     }
     final hasActivity = await Permission.activityRecognition.isGranted;
+    final hasOverlay =
+        await FloatingWindowManager.instance.hasOverlayPermission();
     if (mounted) {
       setState(() {
         _hasPermission = hasPerm;
@@ -137,6 +146,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _hasUsagePermission = hasUsage;
         _hasNotificationAccess = hasNotificationAccess;
         _hasActivityPermission = hasActivity;
+        _hasOverlayPermission = hasOverlay;
       });
     }
   }
@@ -329,6 +339,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _paymentNotificationService.openNotificationAccessSettings();
   }
 
+  Future<void> _openScreenshotsDir() async {
+    final path = await ScreenshotService.getDirPath();
+    await MediaProjectionScreenshot.openDirectory(path);
+  }
+
+  Future<void> _requestOverlayPermission() async {    await FloatingWindowManager.instance.requestOverlayPermission();
+    // 等待用户在系统设置中授权后返回
+    await Future.delayed(const Duration(seconds: 2));
+    final hasOverlay =
+        await FloatingWindowManager.instance.hasOverlayPermission();
+    if (mounted) setState(() => _hasOverlayPermission = hasOverlay);
+  }
+
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -358,6 +381,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       hasUsagePermission: _hasUsagePermission,
                       hasActivityPermission: _hasActivityPermission,
                       hasNotificationAccess: _hasNotificationAccess,
+                      hasOverlayPermission: _hasOverlayPermission,
                       usageSummaryCount: _usageSummaryCount,
                       usageEventCount: _usageEventCount,
                       moveEventCount: _moveEventCount,
@@ -367,6 +391,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       onOpenUsageSettings: _openUsageAccessSettings,
                       onOpenNotificationSettings:
                           _openNotificationAccessSettings,
+                      onRequestOverlayPermission: _requestOverlayPermission,
                       onRefresh: _resumeRefresh,
                       onOpenLocationSettings: _showLocationRequirementDialog,
                     ),
@@ -379,6 +404,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       paymentNotificationCount: _paymentNotificationCount,
                       pendingPaymentNotificationCount:
                           _pendingPaymentNotificationCount,
+                      screenshotCount: _screenshotCount,
+                      onOpenScreenshotsDir: _openScreenshotsDir,
                     ),
                   ],
                 ),
@@ -423,6 +450,7 @@ class _PermissionCard extends StatelessWidget {
     required this.hasUsagePermission,
     required this.hasActivityPermission,
     required this.hasNotificationAccess,
+    required this.hasOverlayPermission,
     required this.usageSummaryCount,
     required this.usageEventCount,
     required this.moveEventCount,
@@ -430,6 +458,7 @@ class _PermissionCard extends StatelessWidget {
     required this.pendingPaymentNotificationCount,
     required this.onOpenUsageSettings,
     required this.onOpenNotificationSettings,
+    required this.onRequestOverlayPermission,
     required this.onRefresh,
     required this.onOpenLocationSettings,
   });
@@ -440,6 +469,7 @@ class _PermissionCard extends StatelessWidget {
   final bool hasUsagePermission;
   final bool hasActivityPermission;
   final bool hasNotificationAccess;
+  final bool hasOverlayPermission;
   final int usageSummaryCount;
   final int usageEventCount;
   final int moveEventCount;
@@ -447,6 +477,7 @@ class _PermissionCard extends StatelessWidget {
   final int pendingPaymentNotificationCount;
   final Future<void> Function() onOpenUsageSettings;
   final Future<void> Function() onOpenNotificationSettings;
+  final Future<void> Function() onRequestOverlayPermission;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onOpenLocationSettings;
 
@@ -592,6 +623,8 @@ class _CollectionOverviewCard extends StatelessWidget {
     required this.moveEventCount,
     required this.paymentNotificationCount,
     required this.pendingPaymentNotificationCount,
+    required this.screenshotCount,
+    required this.onOpenScreenshotsDir,
   });
 
   final int totalRecords;
@@ -600,6 +633,8 @@ class _CollectionOverviewCard extends StatelessWidget {
   final int moveEventCount;
   final int paymentNotificationCount;
   final int pendingPaymentNotificationCount;
+  final int screenshotCount;
+  final Future<void> Function() onOpenScreenshotsDir;
 
   @override
   Widget build(BuildContext context) {
@@ -622,6 +657,16 @@ class _CollectionOverviewCard extends StatelessWidget {
             _InfoRow('设备/前台事件', '$usageEventCount 条'),
             _InfoRow('活动状态', '$moveEventCount 条'),
             _InfoRow('支付通知', '$paymentNotificationCount 条（待同步 $pendingPaymentNotificationCount）'),
+            _InfoRow('截图', '$screenshotCount 张'),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () => onOpenScreenshotsDir(),
+                icon: const Icon(Icons.folder_open, size: 16),
+                label: const Text('浏览截图目录'),
+              ),
+            ),
           ],
         ),
       ),

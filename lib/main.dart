@@ -7,13 +7,7 @@ import 'screens/settings_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initBackgroundService();
-  runApp(const TrackOsApp());    // 初始化浮窗截图功能
-    runApp(const TrackOsApp());
-    // 启动浮窗
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final floatingWidget = const FloatingScreenshotWidget();
-    });
-
+  runApp(const TrackOsApp());
 }
 
 class TrackOsApp extends StatelessWidget {
@@ -49,27 +43,33 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.location_on_outlined),
-            selectedIcon: Icon(Icons.location_on),
-            label: '追踪',
+    return Stack(
+      children: [
+        Scaffold(
+          body: IndexedStack(
+            index: _currentIndex,
+            children: _screens,
           ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '设置',
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _currentIndex,
+            onDestinationSelected: (i) => setState(() => _currentIndex = i),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.location_on_outlined),
+                selectedIcon: Icon(Icons.location_on),
+                label: '追踪',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: '设置',
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+        // 浮窗截图组件：挂入树中以便初始化并保持生命周期
+        const FloatingScreenshotWidget(),
+      ],
     );
   }
 }

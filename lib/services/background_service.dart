@@ -93,7 +93,7 @@ void onBackgroundServiceStart(ServiceInstance service) async {
 
   // Read interval from shared prefs (default 30s)
   final prefs = await SharedPreferences.getInstance();
-  int intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 900; // 默认15分钟
+  int intervalSeconds = prefs.getInt(kPrefIntervalKey) ?? 30; // 默认15分钟
   int usageIntervalSeconds = prefs.getInt(kPrefUsageIntervalKey) ?? 900; // 默认15分钟
   int autoSyncIntervalSeconds = prefs.getInt(kPrefAutoSyncIntervalKey) ?? 900; // 默认15分钟
 

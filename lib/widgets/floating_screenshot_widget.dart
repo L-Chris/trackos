@@ -1,14 +1,13 @@
-
+import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_floating_window/flutter_floating_window.dart';
-import 'package:media_projection_screenshot/media_projection_screenshot.dart';
+import 'package:trackos_screenshot/trackos_screenshot.dart';
 import 'package:image/image.dart' as img;
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
-import 'package:permission_handler/permission_handler.dart';
+
+import '../services/screenshot_service.dart';
 
 class FloatingScreenshotWidget extends StatefulWidget {
   const FloatingScreenshotWidget({super.key});
@@ -18,73 +17,92 @@ class FloatingScreenshotWidget extends StatefulWidget {
 }
 
 class _FloatingScreenshotWidgetState extends State<FloatingScreenshotWidget> {
-  bool _isFloating = false;
+  final _windowManager = FloatingWindowManager.instance;
   bool _isCapturing = false;
-  double _dragDistance = 0;
-  double _windowX = 0;
-  double _windowY = 200;
+  String? _windowId;
+  StreamSubscription<FloatingWindowEvent>? _eventSub;
 
   @override
   void initState() {
     super.initState();
-    _checkFloatingPermission();
+    _initFloatingWindow();
   }
 
-  Future<void> _checkFloatingPermission() async {
-    final status = await Permission.overlay.request();
-    if (status.isGranted) {
-      _showFloatingWindow();
-    } else {
-      print('浮窗权限被拒绝');
+  @override
+  void dispose() {
+    _eventSub?.cancel();
+    if (_windowId != null) {
+      _windowManager.closeWindow(_windowId!).ignore();
     }
+    super.dispose();
   }
 
-  Future<void> _showFloatingWindow() async {
-    final window = FloatingWindow(
-      width: 60,
-      height: 60,
-      gravity: Gravity.right | Gravity.bottom,
-      x: _windowX.toInt(),
-      y: _windowY.toInt(),
-      view: _buildFloatingView(),
-      flags: WindowFlag.notFocusable | WindowFlag.notTouchModal,
-      type: WindowType.phone,
-      onTouchEvent: (event) {
-        if (event.action == MotionEvent.actionDown) {
-          _dragDistance = event.rawX;
-        } else if (event.action == MotionEvent.actionMove) {
-          final distance = event.rawX - _dragDistance;
-          _windowX -= distance;
-          _dragDistance = event.rawX;
-          // 更新窗口位置
-          // 这里需要实现窗口移动逻辑
+  Future<void> _initFloatingWindow() async {
+    try {
+      // 1. 检查/申请浮窗权限
+      bool hasPermission = await _windowManager.hasOverlayPermission();
+      if (!hasPermission) {
+        await _windowManager.requestOverlayPermission();
+        // 等待用户授权后重新检查
+        await Future.delayed(const Duration(seconds: 2));
+        hasPermission = await _windowManager.hasOverlayPermission();
+      }
+      if (!hasPermission) {
+        print('浮窗权限被拒绝');
+        return;
+      }
+
+      // 2. 启动浮窗服务
+      final serviceRunning = await _windowManager.isServiceRunning();
+      if (!serviceRunning) {
+        await _windowManager.startService();
+      }
+
+      // 3. 计算物理像素坐标，将浮窗吸附到右下角
+      final view = WidgetsBinding.instance.platformDispatcher.views.first;
+      final dpr = view.devicePixelRatio;
+      final physW = view.physicalSize.width;
+      final physH = view.physicalSize.height;
+
+      const windowDp = 90;
+      const marginRightDp = 16;
+      const marginBottomDp = 80; // 底部导航栏 + 留白
+      final windowPx = (windowDp * dpr).toInt();
+      final marginRPx = (marginRightDp * dpr).toInt();
+      final marginBPx = (marginBottomDp * dpr).toInt();
+
+      final posX = (physW - windowPx - marginRPx).toInt();
+      final posY = (physH - windowPx - marginBPx).toInt();
+
+      // 4. 创建截图按钮浮窗
+      _windowId = await _windowManager.createWindow(FloatingWindowConfig(
+        width: windowPx,
+        height: windowPx,
+        isDraggable: true,
+        stayOnTop: true,
+        focusable: false,
+        showCloseButton: false,
+        backgroundColor: 0xCC1565C0, // 深蓝色半透明
+        cornerRadius: (windowPx / 2).toDouble(),
+        initialX: posX,
+        initialY: posY,
+        title: '📷',
+      ));
+
+      // 5. 监听点击事件触发截图
+      _eventSub = _windowManager.eventStream.listen((event) {
+        if (event.windowId == _windowId &&
+            event.type == FloatingWindowEventType.windowClicked) {
+          _captureAndUploadScreenshot();
         }
-      },
-    );
-
-    await window.show();
-    setState(() => _isFloating = true);
-  }
-
-  Widget _buildFloatingView() {
-    return GestureDetector(
-      onTap: _captureAndUploadScreenshot,
-      child: Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.8),
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: Colors.white, width: 2),
-        ),
-        child: Icon(Icons.camera_alt, color: Colors.white, size: 30),
-      ),
-    );
+      });
+    } catch (e) {
+      print('浮窗初始化失败: $e');
+    }
   }
 
   Future<void> _captureAndUploadScreenshot() async {
     if (_isCapturing) return;
-
     setState(() => _isCapturing = true);
 
     try {
@@ -95,18 +113,22 @@ class _FloatingScreenshotWidgetState extends State<FloatingScreenshotWidget> {
         return;
       }
 
-      // 捕获截图
+      // 捕获截图（PNG字节）
       final screenshotData = await MediaProjectionScreenshot.takeScreenshot();
 
       if (screenshotData != null) {
-        // 转换为jpg格式
+        // 解码PNG并转换为JPG格式
         final image = img.decodePng(screenshotData);
+        if (image == null) {
+          print('截图PNG解码失败');
+          return;
+        }
         final jpgData = img.encodeJpg(image, quality: 85);
 
-        // 保存到文件
-        final tempDir = await getTemporaryDirectory();
+        // 保存到持久化外部存储目录（文件管理器可访问）
+        final dir = await ScreenshotService.getDir();
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final filePath = '${tempDir.path}/screenshot_$timestamp.jpg';
+        final filePath = '${dir.path}/screenshot_$timestamp.jpg';
         await File(filePath).writeAsBytes(jpgData);
 
         // 上传到服务器
@@ -124,13 +146,16 @@ class _FloatingScreenshotWidgetState extends State<FloatingScreenshotWidget> {
   Future<void> _uploadScreenshot(String filePath) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final serverUrl = prefs.getString('server_url') ?? 'https://track-api.rethinkos.com';
+      final serverUrl =
+          prefs.getString('server_url') ?? 'https://track-api.rethinkos.com';
 
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(filePath, filename: 'screenshot.jpg'),
+        'file':
+            await MultipartFile.fromFile(filePath, filename: 'screenshot.jpg'),
       });
 
-      final response = await Dio().post('$server_url/api/screenshots/upload', data: formData);
+      final response =
+          await Dio().post('$serverUrl/api/screenshots/upload', data: formData);
 
       if (response.statusCode == 200) {
         print('截图上传成功');
@@ -144,6 +169,6 @@ class _FloatingScreenshotWidgetState extends State<FloatingScreenshotWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(); // 这个widget只是用来初始化浮窗，不实际显示UI
+    return const SizedBox.shrink(); // 不实际显示UI，浮窗由系统层渲染
   }
 }

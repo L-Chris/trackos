@@ -16,6 +16,14 @@
     <!-- Network for server sync -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Overlay / floating window -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- flutter_floating_window uses a foreground service; specialUse is the correct type
+         for an overlay/floating-window service (the package wrongly declares mediaProjection
+         which requires system-only permissions). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- MediaProjection screenshot service (trackos_screenshot plugin) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <application
         android:label="trackos"
         android:name="${applicationName}"
@@ -61,6 +69,19 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Override flutter_floating_window's incorrect foregroundServiceType.
+             The package declares "mediaProjection" which requires system-only permissions.
+             We override it to "specialUse" (the correct type for overlay windows) using
+             the manifest merger tools:replace attribute. -->
+        <service
+            android:name="com.example.flutter_floating_window.FloatingWindowService"
+            android:foregroundServiceType="specialUse"
+            tools:replace="android:foregroundServiceType">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="overlay_floating_window" />
+        </service>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
