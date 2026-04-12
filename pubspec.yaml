@@ -52,6 +52,14 @@ dependencies:
   flutter_local_notifications: ^21.0.0
   sensors_plus: ^6.1.1
 
+
+  # 浮窗相关
+  flutter_floating_window: ^0.3.0
+  # 截图相关
+  media_projection_screenshot: ^0.1.0
+  image: ^5.0.0
+  path_provider: ^2.1.5
+  permission_handler: ^12.0.0+1
 dev_dependencies:
   flutter_test:
     sdk: flutter
